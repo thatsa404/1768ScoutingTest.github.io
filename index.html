@@ -475,6 +475,17 @@
             padding: 10px 16px;
             font-size: 1rem;
         }
+
+        .chart-container-main {
+            background: #0f172a;
+            border: 1px solid #334155;
+            border-radius: 12px;
+            padding: 15px;
+            margin-bottom: 25px;
+            height: 400px;
+            /* Fixed height for a clear view */
+            position: relative;
+        }
     </style>
 </head>
 
@@ -569,6 +580,10 @@
 
     <div id="statboticsView" class="app-view" style="display: none;">
         <h2>Statbotics Projections</h2>
+
+        <div class="chart-container-main">
+            <canvas id="teamComparisonChart"></canvas>
+        </div>
 
         <table id="teamTable" style="display: none;">
             <thead>

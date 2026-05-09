@@ -804,9 +804,90 @@ window.sortBy = function (column) {
     displayTeams(); // Redraw the table with the new sorting rules
 };
 
-async function displayTeams() {
+
+
+
+let teamChartInstance = null;
+
+function renderTeamChart(sortedTeams) {
+    const ctx = document.getElementById('teamComparisonChart').getContext('2d');
+    if (teamChartInstance) teamChartInstance.destroy();
+
+    // Prepare labels (Team Numbers)
+    const labels = sortedTeams.map(t => t.teamNumber.toString());
+
+    teamChartInstance = new Chart(ctx, {
+        type: 'bar',
+        data: {
+            labels: labels,
+            datasets: [
+                {
+                    label: 'Auto',
+                    data: sortedTeams.map(t => t.autoEPA || 0),
+                    backgroundColor: '#fbbf24', // Amber
+                    stack: 'EPA'
+                },
+                {
+                    label: 'Teleop',
+                    data: sortedTeams.map(t => t.teleopEPA || 0),
+                    backgroundColor: '#3b82f6', // Blue
+                    stack: 'EPA'
+                },
+                {
+                    label: 'Endgame',
+                    data: sortedTeams.map(t => t.endgameEPA || 0),
+                    backgroundColor: '#10b981', // Green
+                    stack: 'EPA'
+                },
+                {
+                    type: 'scatter',
+                    label: 'Ceiling',
+                    data: sortedTeams.map(t => t.analysis?.ceiling || t.currentEPA || 0),
+                    backgroundColor: '#f43f5e', // Rose/Pink
+                    pointStyle: 'circle',
+                    pointRadius: 6,
+                    pointHoverRadius: 8,
+                    z: 10 // Ensure dots are on top
+                }
+            ]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            scales: {
+                x: {
+                    stacked: true,
+                    grid: { display: false },
+                    ticks: { color: '#94a3b8', font: { size: 10 } }
+                },
+                y: {
+                    beginAtZero: true,
+                    grid: { color: '#334155' },
+                    ticks: { color: '#94a3b8' },
+                    title: { display: true, text: 'Expected Points Added (EPA)', color: '#94a3b8' }
+                }
+            },
+            plugins: {
+                legend: {
+                    position: 'top',
+                    labels: { color: '#f8fafc', usePointStyle: true }
+                },
+                tooltip: {
+                    mode: 'index',
+                    intersect: false
+                }
+            }
+        }
+    });
+}
+
+
+
+
+window.displayTeams = async function () {
     const allTeams = await db.teams.toArray();
     const tableBody = document.getElementById('teamBody');
+    //const searchVal = document.getElementById('teamSearch')?.value || '';
     const table = document.getElementById('teamTable');
 
     if (allTeams.length === 0) {
@@ -855,6 +936,9 @@ async function displayTeams() {
         // parseFloat ensures we are doing math on numbers, not strings
         return (parseFloat(valB) - parseFloat(valA)) * currentSortOrder;
     });
+
+    // 2. Render the Chart with the current list
+    renderTeamChart(allTeams);
 
     tableBody.innerHTML = '';
 
