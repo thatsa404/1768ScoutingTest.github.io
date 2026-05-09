@@ -1,0 +1,25 @@
+{
+  "name": "1768scoutingtest.github.io",
+  "version": "1.0.0",
+  "description": "Test version of Nashoba Robotics scouting dashboard web app",
+  "main": "index.js",
+  "scripts": {
+    "dev": "vite"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/thatsa404/1768ScoutingTest.github.io.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "bugs": {
+    "url": "https://github.com/thatsa404/1768ScoutingTest.github.io/issues"
+  },
+  "homepage": "https://github.com/thatsa404/1768ScoutingTest.github.io#readme",
+  "dependencies": {
+    "dexie": "^4.4.2",
+    "vite": "^8.0.11"
+  }
+}

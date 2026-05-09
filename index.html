@@ -1,0 +1,670 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <title>1768 Event Hub</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        /* General Page Look */
+        body {
+            font-family: sans-serif;
+            padding: 20px;
+            background: #1a1a1a;
+            color: white;
+        }
+
+        /* Control Bar */
+        #controls {
+            margin-bottom: 20px;
+            display: flex;
+            gap: 10px;
+            align-items: center;
+        }
+
+        input {
+            padding: 8px;
+            border-radius: 4px;
+            border: 1px solid #444;
+            background: #333;
+            color: white;
+        }
+
+        /* Buttons */
+        button {
+            padding: 8px 16px;
+            border-radius: 4px;
+            background: #2563eb;
+            color: white;
+            border: none;
+            cursor: pointer;
+            font-weight: bold;
+        }
+
+        button:disabled {
+            background: #444;
+            cursor: not-allowed;
+        }
+
+        #clearBtn {
+            background: #dc2626;
+        }
+
+        /* The Table */
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 20px;
+            background: #222;
+        }
+
+        /* Clickable Headers - NEW */
+        th {
+            background: #333;
+            padding: 12px;
+            text-align: left;
+            border-bottom: 2px solid #444;
+            cursor: pointer;
+            /* Makes the mouse turn into a hand */
+            user-select: none;
+            /* Prevents highlighting text when clicking fast */
+        }
+
+        th:hover {
+            background: #444;
+        }
+
+        /* Subtle highlight on hover */
+
+        td {
+            padding: 12px;
+            border-bottom: 1px solid #333;
+        }
+
+        tr:hover {
+            background: #2a2a2a;
+        }
+
+        /* The Link Look - NEW */
+        .team-link {
+            color: #3b82f6;
+            text-decoration: underline;
+            cursor: pointer;
+        }
+
+        .confidence {
+            color: #888;
+            font-size: 0.85em;
+        }
+
+        /* If a row has a ceiling, give the text a slight glow or weight */
+        .ceiling-cell strong {
+            color: #4ade80;
+            /* A soft green for the ceiling numbers */
+        }
+
+        /* Navigation Styles */
+        .top-nav {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 20px;
+            border-bottom: 2px solid #ddd;
+            padding-bottom: 10px;
+        }
+
+        .nav-btn {
+            padding: 10px 20px;
+            font-size: 16px;
+            background-color: #f3f4f6;
+            color: #555;
+            border: none;
+            border-radius: 6px 6px 0 0;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .nav-btn:hover {
+            background-color: #e5e7eb;
+        }
+
+        .nav-btn.active {
+            background-color: #3b82f6;
+            color: white;
+            font-weight: bold;
+        }
+
+        #scheduleTable {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 20px;
+        }
+
+        #scheduleTable th,
+        #scheduleTable td {
+            border: 1px solid #ddd;
+            padding: 12px;
+            text-align: center;
+        }
+
+        .red-alliance {
+            color: #b91c1c;
+            font-weight: bold;
+        }
+
+        .blue-alliance {
+            color: #1d4ed8;
+            font-weight: bold;
+        }
+
+        /* 1. Fix the Match Number column contrast */
+        .match-number {
+            font-weight: bold;
+            color: #cbd5e1;
+            /* A much lighter, cleaner slate gray */
+            font-size: 0.85em;
+        }
+
+        /* 2. Explicitly define Red Alliance styles (Fixes the Green bug) */
+        .red-header {
+            background-color: #b91c1c !important;
+            color: #ffffff !important;
+            /* Forces white text */
+        }
+
+        .red-cell {
+            background-color: rgba(185, 28, 28, 0.05);
+            color: #ef4444 !important;
+            /* Forces a clear Red font for the team numbers */
+        }
+
+        /* 3. Explicitly define Blue Alliance styles */
+        .blue-header {
+            background-color: #1e40af !important;
+            color: #ffffff !important;
+        }
+
+        .blue-cell {
+            background-color: rgba(30, 64, 175, 0.05);
+            color: #3b82f6 !important;
+            /* Forces a clear Blue font for the team numbers */
+        }
+
+        /* 4. General Table cleanup */
+        #scheduleTable th,
+        #scheduleTable td {
+            border: 1px solid #334155;
+            /* Darker borders to match the new vibe */
+            padding: 10px;
+            text-align: center;
+        }
+
+        /* High-visibility highlight for selected teams */
+        .highlight-active {
+            background-color: #fde047 !important;
+            /* Bright Yellow */
+            color: #000000 !important;
+            transform: scale(1.05);
+            box-shadow: 0 0 10px rgba(253, 224, 71, 0.5);
+            transition: all 0.2s ease;
+            z-index: 10;
+        }
+
+        /* Positioning for the shortcut button */
+        .view-header-container {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 15px;
+        }
+
+        .shortcut-btn {
+            background-color: #334155;
+            color: white;
+            border: 1px solid #475569;
+            padding: 6px 12px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 0.85em;
+            transition: background 0.2s;
+        }
+
+        .shortcut-btn:hover {
+            background-color: #475569;
+        }
+
+        /* Subtle row highlight to guide the eyes */
+        .row-highlight {
+            background-color: rgba(255, 255, 255, 0.05) !important;
+            border-top: 1px solid #475569;
+            border-bottom: 1px solid #475569;
+        }
+
+        /* Ensure the match number stays readable during row highlights */
+        .row-highlight .match-number {
+            color: #ffffff;
+        }
+
+        #scheduleTable tbody tr {
+            transition: background-color 0.15s ease;
+        }
+
+        /* Optional: Add a hover effect to rows that aren't currently highlighted */
+        #scheduleTable tbody tr:hover:not(.row-highlight) {
+            background-color: rgba(255, 255, 255, 0.02);
+        }
+
+        /* Modal Overlay Styles */
+        .modal-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.85);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            z-index: 1000;
+        }
+
+        .modal-content {
+            background: #1e293b;
+            padding: 30px;
+            border-radius: 12px;
+            width: 90%;
+            max-width: 600px;
+            border: 1px solid #334155;
+        }
+
+        .modal-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 20px;
+        }
+
+        .close-btn {
+            background: none;
+            border: none;
+            color: white;
+            font-size: 2rem;
+            cursor: pointer;
+        }
+
+        .match-comparison-container {
+            display: flex;
+            align-items: center;
+            justify-content: space-around;
+            margin-bottom: 30px;
+        }
+
+        .vs-divider {
+            font-weight: bold;
+            color: #475569;
+            font-size: 1.5rem;
+        }
+
+        .alliance-column {
+            text-align: center;
+            flex: 1;
+        }
+
+        .team-list {
+            margin: 15px 0;
+            font-size: 1.2rem;
+            line-height: 1.8;
+        }
+
+        .score-display {
+            font-size: 3rem;
+            font-weight: 800;
+        }
+
+        .red-score {
+            color: #ef4444;
+        }
+
+        .blue-score {
+            color: #3b82f6;
+        }
+
+        .red-header-text {
+            color: #ef4444;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+
+        .blue-header-text {
+            color: #3b82f6;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+
+        .prep-container {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 20px;
+            margin-top: 20px;
+        }
+
+        .prep-team-card {
+            background: #1e293b;
+            border: 1px solid #334155;
+            border-radius: 8px;
+            padding: 15px;
+            margin-bottom: 15px;
+            border-left: 5px solid transparent;
+        }
+
+        .red-prep .prep-team-card {
+            border-left-color: #ef4444;
+        }
+
+        .blue-prep .prep-team-card {
+            border-left-color: #3b82f6;
+        }
+
+        .prep-card-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 10px;
+            border-bottom: 1px solid #334155;
+            padding-bottom: 5px;
+        }
+
+        .prep-stats-grid {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 8px;
+            font-size: 0.9em;
+        }
+
+        .stat-label {
+            color: #94a3b8;
+            font-size: 0.8em;
+            text-transform: uppercase;
+        }
+
+        .stat-value {
+            font-weight: bold;
+            color: #f8fafc;
+        }
+
+        /* Fix the squished headers */
+        .alliance-header-large {
+            padding: 20px;
+            font-size: 1.5rem;
+            font-weight: 800;
+            text-transform: uppercase;
+            letter-spacing: 2px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+            text-align: center;
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+        }
+
+        /* Chart container styling */
+        .chart-container-prep {
+            background: #0f172a;
+            border: 1px solid #334155;
+            border-radius: 12px;
+            padding: 20px;
+            margin-bottom: 30px;
+            height: 350px;
+            /* Controlled height for the comparison */
+        }
+
+        /* Ensure the columns don't crowd the chart */
+        .prep-container {
+            align-items: start;
+        }
+
+        /* Update your existing highlight-active or add this specific version */
+        #matchPrepView .prep-team-card.highlight-active {
+            background-color: #fef08a !important;
+            /* Slightly softer yellow for large cards */
+            border-color: #facc15 !important;
+            color: #1e293b !important;
+            transform: scale(1.02);
+            box-shadow: 0 10px 15px -3px rgba(250, 204, 21, 0.3);
+        }
+
+        /* Ensure labels stay dark when the card is yellow */
+        #matchPrepView .prep-team-card.highlight-active .stat-label {
+            color: #854d0e;
+        }
+
+        #matchPrepView .prep-team-card.highlight-active .stat-value {
+            color: #000;
+        }
+
+        /* Mobile responsiveness for Match Prep */
+        @media (max-width: 768px) {
+            .prep-container {
+                grid-template-columns: 1fr;
+                /* Stack Red and Blue on top of each other */
+            }
+
+            .chart-container-prep {
+                height: 250px;
+                /* Shorten chart height for vertical scrolling */
+            }
+
+            .alliance-header-large {
+                font-size: 1.2rem;
+                padding: 12px;
+            }
+        }
+
+        /* Prevent the whole page from zooming out when a table is wide */
+        .app-view {
+            overflow-x: auto;
+            -webkit-overflow-scrolling: touch;
+        }
+
+        /* Make table cells easier to tap */
+        #scheduleTable td,
+        #teamTable td {
+            padding: 12px 8px;
+            /* Slightly taller rows for thumbs */
+        }
+
+        /* Ensure the focus button is easy to hit */
+        .shortcut-btn {
+            padding: 10px 16px;
+            font-size: 1rem;
+        }
+    </style>
+</head>
+
+<body>
+
+    <h1>Nashoba Robotics Scouting Hub</h1>
+
+    <nav class="top-nav">
+        <button class="nav-btn active" onclick="switchView('homeView', this)">Home</button>
+        <button class="nav-btn" onclick="switchView('scheduleView', this)">Schedule</button>
+        <button class="nav-btn" onclick="switchView('statboticsView', this)">Statbotics</button>
+        <button class="nav-btn" onclick="switchView('tbaView', this)">TBA (Soon)</button>
+        <button class="nav-btn" onclick="switchView('scoutingView', this)">Scouting (Soon)</button>
+    </nav>
+
+    <div id="matchPrepView" class="app-view" style="display: none;">
+        <div class="view-header-container">
+            <h2 id="prepMatchLabel">Match Prep: QM --</h2>
+            <button class="nav-btn" onclick="switchView('scheduleView')">Back to Schedule</button>
+        </div>
+
+        <div class="chart-container-prep">
+            <canvas id="allianceComparisonChart"></canvas>
+        </div>
+
+        <div class="prep-container">
+            <div class="prep-column red-prep">
+                <div class="alliance-header-large red-header">Red Alliance</div>
+                <div id="redPrepList" class="prep-team-list"></div>
+            </div>
+
+            <div class="prep-column blue-prep">
+                <div class="alliance-header-large blue-header">Blue Alliance</div>
+                <div id="bluePrepList" class="prep-team-list"></div>
+            </div>
+        </div>
+    </div>
+
+    <div id="scheduleView" class="app-view" style="display: none;">
+        <div class="view-header-container">
+            <h2>Match Schedule</h2>
+            <button class="shortcut-btn" onclick="highlightTeam('1768')">
+                Focus 1768 ⭐
+            </button>
+        </div>
+
+        <table id="scheduleTable">
+            <thead>
+                <tr>
+                    <th rowspan="2">Match</th>
+                    <th colspan="3" class="red-header">Red Alliance</th>
+                    <th colspan="3" class="blue-header">Blue Alliance</th>
+                    <th rowspan="2">Result</th>
+                </tr>
+                <tr>
+                    <th class="red-header">1</th>
+                    <th class="red-header">2</th>
+                    <th class="red-header">3</th>
+                    <th class="blue-header">1</th>
+                    <th class="blue-header">2</th>
+                    <th class="blue-header">3</th>
+                </tr>
+            </thead>
+            <tbody id="scheduleBody">
+            </tbody>
+        </table>
+    </div>
+
+    <div id="homeView" class="app-view" style="display: block;">
+        <h2>Event Dashboard</h2>
+        <p>Enter a Statbotics/TBA Event Key (e.g., 2026necmp) to begin.</p>
+
+        <div id="controls">
+            <input type="text" id="eventKeyInput" placeholder="Event Key (2026necmp)"
+                style="padding: 10px; border-radius: 4px; border: 1px solid #ccc; width: 200px;">
+            </input>
+
+            <div style="display: flex; gap: 10px; margin-top: 10px; flex-wrap: wrap;">
+                <button onclick="syncAll()" style="background-color: #059669; color: white;">Sync All Data</button>
+                <button onclick="syncProjections()">Sync Statbotics</button>
+                <button onclick="syncSchedule()">Sync Schedule</button>
+                <button onclick="clearCache()" style="background-color: #ef4444; color: white;">Clear Cache</button>
+            </div>
+        </div>
+        <div id="status"></div>
+        <div id="progressContainer"
+            style="display: none; width: 100%; background: #ddd; margin-top: 10px; border-radius: 4px;">
+            <div id="progressBar"
+                style="width: 0%; height: 10px; background: #3b82f6; border-radius: 4px; transition: width 0.2s;"></div>
+        </div>
+    </div>
+
+    <div id="statboticsView" class="app-view" style="display: none;">
+        <h2>Statbotics Projections</h2>
+
+        <table id="teamTable" style="display: none;">
+            <thead>
+                <tr>
+                    <th onclick="sortBy('teamNumber')" style="cursor:pointer;">Team ↕</th>
+                    <th onclick="sortBy('currentEPA')" style="cursor:pointer;">EPA ↕</th>
+                    <th onclick="sortBy('ceiling')" style="cursor:pointer;">Ceiling ↕</th>
+                    <th>Confidence</th>
+                    <th onclick="sortBy('autoEPA')" style="cursor:pointer;">Auto ↕</th>
+                    <th onclick="sortBy('teleopEPA')" style="cursor:pointer;">Teleop ↕</th>
+                    <th onclick="sortBy('endgameEPA')" style="cursor:pointer;">Endgame ↕</th>
+
+                </tr>
+            </thead>
+            <tbody id="teamBody">
+            </tbody>
+        </table>
+    </div>
+
+    <div id="tbaView" class="app-view" style="display: none;">
+        <h2>The Blue Alliance</h2>
+        <p>OPR and Match Schedule data coming soon.</p>
+    </div>
+
+    <div id="scoutingView" class="app-view" style="display: none;">
+        <h2>Manual Scouting</h2>
+        <p>Custom match data coming soon.</p>
+    </div>
+
+    <div id="teamDetailView"
+        style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.9); overflow-y:auto; padding:40px; box-sizing:border-box; z-index:100;">
+        <button onclick="closeDetail()" style="background:#444; margin-bottom:20px;">← Back to Event</button>
+
+        <div style="display:flex; justify-content:space-between; align-items:center;">
+            <h1 id="detailTeamLabel">Team ---</h1>
+            <a id="statboticsLink" href="#" target="_blank" style="color: #3b82f6; text-decoration: none;">View on
+                Statbotics ↗</a>
+        </div>
+
+        <div id="detailStats" style="display:grid; grid-template-columns: 1fr 1fr 1fr; gap:20px; margin-top:20px;">
+        </div>
+
+        <div style="background:#222; padding:20px; margin-top:20px; border-radius:8px; border: 1px solid #444;">
+            <h3 style="margin-top:0;">Exponential Fit Analysis</h3>
+            <div style="display:flex; gap:20px; align-items:center; flex-wrap:wrap;">
+                <div>
+                    <label>Start Match:</label>
+                    <input type="number" id="mathStart" value="1" min="1" style="width:60px;">
+                </div>
+                <div>
+                    <label>End Match:</label>
+                    <input type="number" id="mathEnd" value="100" min="2" style="width:60px;">
+                </div>
+                <button id="runAnalysisBtn" onclick="runManualAnalysis()" style="background:#10b981;">Calculate
+                    Ceiling</button>
+            </div>
+            <div id="analysisFeedback" style="margin-top:10px; color:#aaa; font-size:0.9em;">Select a range and click
+                calculate.</div>
+        </div>
+
+        <div id="chartContainer" style="margin-top:40px; background:#222; padding:20px; border-radius:8px;">
+            <h3>Performance Trajectory</h3>
+            <canvas id="performanceChart"></canvas>
+        </div>
+    </div>
+
+    <div id="matchDetailView" class="modal-overlay" style="display: none;">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2 id="matchDetailLabel">Match Details</h2>
+                <button onclick="closeMatchDetail()" class="close-btn">×</button>
+            </div>
+
+            <div class="match-comparison-container">
+                <div class="alliance-column red-column">
+                    <h3 class="red-header-text">Red Alliance</h3>
+                    <div id="redMatchTeams" class="team-list"></div>
+                    <div class="score-display red-score" id="redTotalScore">-</div>
+                </div>
+
+                <div class="vs-divider">VS</div>
+
+                <div class="alliance-column blue-column">
+                    <h3 class="blue-header-text">Blue Alliance</h3>
+                    <div id="blueMatchTeams" class="team-list"></div>
+                    <div class="score-display blue-score" id="blueTotalScore">-</div>
+                </div>
+            </div>
+
+            <div id="scoreBreakdown" class="breakdown-section">
+                <p style="color: #94a3b8; font-style: italic;">Detailed scoring breakdown coming in next update...</p>
+            </div>
+        </div>
+    </div>
+
+    <script type="module" src="main.js"></script>
+</body>
+
+</html>
