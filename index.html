@@ -9,6 +9,40 @@
     <title>1768 Event Hub</title>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <style>
+        :root {
+            /* Base scaling */
+            --base-font-size: 18px;
+            --heading-size: 2.2rem;
+            --subheading-size: 1.6rem;
+            --table-text: 1.1rem;
+            --stat-value-size: 1.4rem;
+            --team-number-large: 2.5rem;
+        }
+
+        body {
+            font-size: var(--base-font-size);
+            line-height: 1.5;
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+            -webkit-font-smoothing: antialiased;
+        }
+
+        h2 {
+            font-size: var(--heading-size);
+            font-weight: 800;
+            margin-bottom: 1rem;
+        }
+
+        h3 {
+            font-size: var(--subheading-size);
+            font-weight: 700;
+        }
+
+        /* tabular-nums ensures columns of numbers stay aligned */
+        * {
+            font-variant-numeric: tabular-nums;
+        }
+
+
         /* General Page Look */
         body {
             font-family: sans-serif;
@@ -53,35 +87,33 @@
             background: #dc2626;
         }
 
-        /* The Table */
         table {
             width: 100%;
-            border-collapse: collapse;
-            margin-top: 20px;
-            background: #222;
+            border-collapse: separate;
+            border-spacing: 0 4px;
+            /* Adds slight gap between rows for readability */
         }
 
-        /* Clickable Headers - NEW */
         th {
-            background: #333;
+            font-size: 1.0rem;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            color: #94a3b8;
             padding: 12px;
-            text-align: left;
-            border-bottom: 2px solid #444;
-            cursor: pointer;
-            /* Makes the mouse turn into a hand */
-            user-select: none;
-            /* Prevents highlighting text when clicking fast */
         }
-
-        th:hover {
-            background: #444;
-        }
-
-        /* Subtle highlight on hover */
 
         td {
-            padding: 12px;
-            border-bottom: 1px solid #333;
+            font-size: var(--table-text);
+            padding: 16px 12px;
+            /* Thicker rows for mobile tapping */
+        }
+
+        /* Make team numbers stand out in every table */
+        td strong,
+        .match-number {
+            font-size: 1.2rem;
+            font-weight: 800;
+            color: #f8fafc;
         }
 
         tr:hover {
@@ -97,7 +129,7 @@
 
         .confidence {
             color: #888;
-            font-size: 0.85em;
+            font-size: 1.0em;
         }
 
         /* If a row has a ceiling, give the text a slight glow or weight */
@@ -116,18 +148,21 @@
         }
 
         .nav-btn {
-            padding: 10px 20px;
-            font-size: 16px;
-            background-color: #f3f4f6;
-            color: #555;
+            background: #334155;
+            color: white;
             border: none;
-            border-radius: 6px 6px 0 0;
             cursor: pointer;
-            transition: all 0.2s;
+            white-space: nowrap;
+            font-size: 1.1rem;
+            padding: 14px 24px;
+            font-weight: 700;
+            letter-spacing: 0.02em;
+            border-radius: 10px;
+            /* Prevents text from wrapping on mobile */
         }
 
         .nav-btn:hover {
-            background-color: #e5e7eb;
+            background: #475569;
         }
 
         .nav-btn.active {
@@ -164,7 +199,7 @@
             font-weight: bold;
             color: #cbd5e1;
             /* A much lighter, cleaner slate gray */
-            font-size: 0.85em;
+            font-size: 1.1em;
         }
 
         /* 2. Explicitly define Red Alliance styles (Fixes the Green bug) */
@@ -215,20 +250,22 @@
         /* Positioning for the shortcut button */
         .view-header-container {
             display: flex;
-            justify-content: space-between;
             align-items: center;
-            margin-bottom: 15px;
+            gap: 20px;
+            margin-bottom: 25px;
         }
 
         .shortcut-btn {
             background-color: #334155;
             color: white;
             border: 1px solid #475569;
-            padding: 6px 12px;
-            border-radius: 4px;
             cursor: pointer;
-            font-size: 0.85em;
             transition: background 0.2s;
+            font-size: 1.1rem;
+            padding: 14px 24px;
+            font-weight: 700;
+            letter-spacing: 0.02em;
+            border-radius: 10px;
         }
 
         .shortcut-btn:hover {
@@ -380,18 +417,21 @@
             display: grid;
             grid-template-columns: repeat(2, 1fr);
             gap: 8px;
-            font-size: 0.9em;
+            font-size: 1.0em;
         }
 
         .stat-label {
+            font-size: 1.0rem !important;
+            /* Smaller but clear labels */
+            font-weight: 600;
+            letter-spacing: 0.05em;
             color: #94a3b8;
-            font-size: 0.8em;
-            text-transform: uppercase;
         }
 
         .stat-value {
-            font-weight: bold;
-            color: #f8fafc;
+            font-size: var(--stat-value-size) !important;
+            font-weight: 800;
+            color: #f1f5f9;
         }
 
         /* Fix the squished headers */
@@ -488,6 +528,54 @@
             height: 400px;
             /* Fixed height for a clear view */
             position: relative;
+        }
+
+        .prep-card-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 12px;
+        }
+
+        .header-left {
+            display: flex;
+            flex-direction: column;
+        }
+
+        .prep-team-number {
+            font-size: var(--team-number-large) !important;
+            line-height: 1;
+            margin-bottom: 4px;
+        }
+
+        .ceiling-label {
+            font-size: 1rem !important;
+            font-weight: 600;
+        }
+
+        /* The Link Button */
+        .profile-link-btn {
+            background: #334155;
+            color: #f8fafc;
+            border: none;
+            padding: 12px 20px !important;
+            /* Larger touch target */
+            font-size: 1rem !important;
+            border-radius: 6px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: background 0.2s;
+        }
+
+        .profile-link-btn:hover {
+            background: #475569;
+            color: #fff;
+        }
+
+        /* Ensure the button is still readable when the card is highlighted yellow */
+        .highlight-active .profile-link-btn {
+            background: #1e293b;
+            color: #fef08a;
         }
     </style>
 </head>
@@ -618,7 +706,12 @@
 
     <div id="teamDetailView"
         style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.9); overflow-y:auto; padding:40px; box-sizing:border-box; z-index:100;">
-        <button onclick="closeDetail()" style="background:#444; margin-bottom:20px;">← Back to Event</button>
+        <div class="view-header-container">
+            <button id="detailBackBtn" class="nav-btn" onclick="goBack()">
+                ← Back
+            </button>
+            <h2 id="detailTeamLabel">Team --</h2>
+        </div>
 
         <div style="display:flex; justify-content:space-between; align-items:center;">
             <h1 id="detailTeamLabel">Team ---</h1>

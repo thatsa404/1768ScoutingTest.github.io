@@ -170,12 +170,18 @@ window.viewMatchPrep = async function (matchKey) {
         const ceiling = team.analysis?.ceiling || team.currentEPA || 0;
 
         return `
-        <div class="prep-team-card ${focusClass}" onclick="highlightTeam('${teamNum}')" style="cursor:pointer;">
+        <div class="prep-team-card ${focusClass}">
             <div class="prep-card-header">
-                <span style="font-size: 1.2rem; font-weight: bold;">${teamNum}</span>
-                <span class="ceiling-cell" style="font-size: 0.8rem;">Ceiling: <strong>${ceiling}</strong></span>
+                <div class="header-left" onclick="highlightTeam('${teamNum}')" style="cursor:pointer;">
+                    <span class="prep-team-number">${teamNum}</span>
+                    <span class="ceiling-label">Ceiling: <strong>${ceiling}</strong></span>
+                </div>
+                <button class="profile-link-btn" onclick="viewTeamDetail(${teamNum})">
+                    View Profile
+                </button>
             </div>
-            <div class="prep-stats-grid">
+            
+            <div class="prep-stats-grid" onclick="highlightTeam('${teamNum}')" style="cursor:pointer;">
                 <div><div class="stat-label">Total EPA</div><div class="stat-value">${team.currentEPA.toFixed(1)}</div></div>
                 <div><div class="stat-label">Auto</div><div class="stat-value">${team.autoEPA.toFixed(1)}</div></div>
                 <div><div class="stat-label">Teleop</div><div class="stat-value">${team.teleopEPA.toFixed(1)}</div></div>
@@ -449,7 +455,7 @@ window.syncProjections = async function () {
     localStorage.setItem('lastEventKey', eventKey);
 
     const statusDiv = document.getElementById('status');
-    const progressContainer = document.getElementById('progressBarContainer');
+    const progressContainer = document.getElementById('progressContainer');
     const progressBar = document.getElementById('progressBar');
 
     statusDiv.innerText = `Fetching team list for ${eventKey}...`;
@@ -1060,6 +1066,8 @@ window.viewTeamDetail = async function (teamNumber) {
     `;
 
     renderChart(team);
+
+    window.switchView('teamDetailView');
 };
 
 window.closeDetail = function () {
@@ -1067,29 +1075,52 @@ window.closeDetail = function () {
 };
 
 
-window.switchView = function (viewId, clickedButton) {
-    // 1. Hide all main views
-    const views = document.querySelectorAll('.app-view');
-    views.forEach(view => {
-        view.style.display = 'none';
-    });
+// At the top of main.js
+window.currentView = 'scheduleView';
+window.previousView = 'scheduleView';
 
-    // 2. Hide the detail view if it's open (keeps things clean)
-    const detailView = document.getElementById('teamDetailView');
-    if (detailView) detailView.style.display = 'none';
+window.switchView = function (viewId) {
+    // 1. Hide the current view
+    const current = document.getElementById(window.currentView);
+    if (current) current.style.display = 'none';
 
-    // 3. Show the requested view
-    document.getElementById(viewId).style.display = 'block';
+    // 2. Store the current view as 'previous' before we swap
+    // (Only if we aren't switching TO the same view)
+    if (window.currentView !== viewId) {
+        window.previousView = window.currentView;
+    }
 
-    // 4. Update the active state on the buttons
-    const buttons = document.querySelectorAll('.nav-btn');
-    buttons.forEach(btn => btn.classList.remove('active'));
+    // 3. Show the new view
+    const next = document.getElementById(viewId);
+    if (next) {
+        next.style.display = 'block';
+        window.currentView = viewId;
+    }
 
-    // If triggered by a button click, highlight that button
-    if (clickedButton) {
-        clickedButton.classList.add('active');
+    // 4. Update the Back button label on the Team Detail page
+    updateDetailBackButton();
+};
+
+window.updateDetailBackButton = function () {
+    const btn = document.getElementById('detailBackBtn');
+    if (!btn) return;
+
+    // Change the label based on where the user was previously
+    if (window.previousView === 'matchPrepView') {
+        btn.innerText = '← Back to Match Prep';
+    } else if (window.previousView === 'teamView') {
+        btn.innerText = '← Back to Statbotics';
+    } else {
+        btn.innerText = '← Back';
     }
 };
+
+window.goBack = function () {
+    // Navigate to the stored previous view
+    window.switchView(window.previousView);
+};
+
+
 
 
 
@@ -1159,7 +1190,9 @@ function renderChart(team) {
                                 text: ev.toUpperCase(),
                                 fillStyle: getEventColor(ev),
                                 strokeStyle: getEventColor(ev),
-                                lineWidth: 0
+                                lineWidth: 0,
+                                // Some versions of Chart.js require explicit fontColor here
+                                fontColor: '#f8fafc'
                             }));
                         }
                     }
