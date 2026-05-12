@@ -1,6 +1,2 @@
-node_modules
 .env
 dist
-/.claude
-CLAUDE.md
-notes.txt
