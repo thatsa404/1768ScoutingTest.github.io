@@ -19,6 +19,7 @@
   },
   "homepage": "https://github.com/thatsa404/1768ScoutingTest.github.io#readme",
   "dependencies": {
+    "chart.js": "^4.5.1",
     "dexie": "^4.4.2",
     "vite": "^8.0.11"
   }

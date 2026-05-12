@@ -1,11 +1,17 @@
 import Dexie from 'dexie';
+import Chart from 'chart.js/auto';
 
 // 1. DATABASE SETUP
 // We use Dexie to handle larger storage (images/multiple events)
 const db = new Dexie('ScoutingAppDB');
 db.version(1).stores({
     teams: 'teamNumber, eventKey',
-    matches: 'key, eventKey, matchNumber' // Add this table
+    matches: 'key, eventKey, matchNumber'
+});
+db.version(2).stores({
+    teams: 'teamNumber, eventKey',
+    matches: 'key, eventKey, matchNumber',
+    tbaTeams: 'teamNumber, eventKey'
 });
 
 // 2. CONFIG & API KEYS
@@ -46,7 +52,8 @@ window.fetchSchedule = async function (eventKey) {
             red: m.alliances.red.team_keys.map(t => t.replace('frc', '')),
             blue: m.alliances.blue.team_keys.map(t => t.replace('frc', '')),
             redScore: m.alliances.red.score,
-            blueScore: m.alliances.blue.score
+            blueScore: m.alliances.blue.score,
+            videos: (m.videos || []).filter(v => v.type === 'youtube').map(v => v.key),
         })));
 
         console.log(`Loaded ${qualMatches.length} matches into schedule.`);
@@ -97,11 +104,15 @@ window.displaySchedule = async function () {
                 <strong>${team}</strong>
             </td>`).join('');
 
+        const redWon  = m.redScore > -1 && m.redScore  > m.blueScore;
+        const blueWon = m.redScore > -1 && m.blueScore > m.redScore;
         const resultCell = (m.redScore > -1)
-            ? `<td onclick="viewMatchDetail('${m.key}')" style="cursor: pointer; font-weight: bold; border-left: 2px solid #334155;">
-                <span class="red-alliance">${m.redScore}</span> - <span class="blue-alliance">${m.blueScore}</span>
+            ? `<td onclick="viewMatchDetail('${m.key}')" style="cursor:pointer; border-left:2px solid #334155; white-space:nowrap;">
+                <span style="color:${redWon ? '#4ade80' : '#94a3b8'}; font-weight:${redWon ? 'bold' : 'normal'}">${m.redScore}</span>
+                <span style="color:#475569;"> – </span>
+                <span style="color:${blueWon ? '#4ade80' : '#94a3b8'}; font-weight:${blueWon ? 'bold' : 'normal'}">${m.blueScore}</span>
                </td>`
-            : `<td style="color: #64748b; font-style: italic; border-left: 2px solid #334155;">Upcoming</td>`;
+            : `<td style="color:#64748b; font-style:italic; border-left:2px solid #334155;">Upcoming</td>`;
 
         row.innerHTML = `
             <td class="match-number" 
@@ -258,25 +269,140 @@ function renderPrepChart(redTeams, blueTeams) {
 
 
 window.viewMatchDetail = async function (matchKey) {
-    // 1. Get match data from Dexie
     const match = await db.matches.get(matchKey);
     if (!match) return;
 
-    // 2. Populate the labels and scores
-    document.getElementById('matchDetailLabel').innerText = `Match Details: Qual ${match.matchNumber}`;
-    document.getElementById('redTotalScore').innerText = match.redScore;
-    document.getElementById('blueTotalScore').innerText = match.blueScore;
+    const redWon  = match.redScore  > match.blueScore;
+    const blueWon = match.blueScore > match.redScore;
 
-    // 3. Populate the team lists
-    document.getElementById('redMatchTeams').innerHTML = match.red.map(t => `<div>${t}</div>`).join('');
+    document.getElementById('matchDetailLabel').innerText = `Match Details: Qual ${match.matchNumber}`;
+
+    const redScoreEl  = document.getElementById('redTotalScore');
+    const blueScoreEl = document.getElementById('blueTotalScore');
+    redScoreEl.innerText  = match.redScore;
+    blueScoreEl.innerText = match.blueScore;
+    redScoreEl.style.color  = redWon  ? '#4ade80' : '#f8fafc';
+    blueScoreEl.style.color = blueWon ? '#4ade80' : '#f8fafc';
+
+    document.getElementById('redMatchTeams').innerHTML  = match.red.map(t  => `<div>${t}</div>`).join('');
     document.getElementById('blueMatchTeams').innerHTML = match.blue.map(t => `<div>${t}</div>`).join('');
 
-    // 4. Show the modal
+    const breakdownEl = document.getElementById('scoreBreakdown');
+    const rbd = match.redBreakdown;
+    const bbd = match.blueBreakdown;
+
+    if (rbd && bbd) {
+        const redEndgame  = (rbd.hubScore?.endgamePoints || 0) + (rbd.endGameTowerPoints || 0);
+        const blueEndgame = (bbd.hubScore?.endgamePoints || 0) + (bbd.endGameTowerPoints || 0);
+
+        // Match-result RP: 3 win / 1 tie / 0 loss
+        const redResultRP  = redWon  ? 3 : match.redScore  === match.blueScore ? 1 : 0;
+        const blueResultRP = blueWon ? 3 : match.redScore  === match.blueScore ? 1 : 0;
+
+        const bonusFields = [
+            ['Energized RP',    'energizedAchieved'],
+            ['Supercharged RP', 'superchargedAchieved'],
+            ['Traversal RP',    'traversalAchieved'],
+        ];
+        const check = val => val ? `<span style="color:#4ade80;">✓</span>` : `<span style="color:#475569;">✗</span>`;
+
+        const totalRedRP  = rbd.rp ?? (redResultRP  + bonusFields.reduce((s, [, f]) => s + (rbd[f] ? 1 : 0), 0));
+        const totalBlueRP = bbd.rp ?? (blueResultRP + bonusFields.reduce((s, [, f]) => s + (bbd[f] ? 1 : 0), 0));
+
+        const scoreRows = [
+            ['Auto',         rbd.totalAutoPoints,  bbd.totalAutoPoints],
+            ['Teleop',       rbd.totalTeleopPoints, bbd.totalTeleopPoints],
+            ['Endgame',      redEndgame,            blueEndgame],
+            ['Fouls Earned', rbd.foulPoints,        bbd.foulPoints],
+        ];
+        const rpRows = [
+            ['Match Result', redResultRP, blueResultRP],
+            ...bonusFields.map(([label, field]) => [label, rbd[field], bbd[field]]),
+        ];
+
+        breakdownEl.innerHTML = `
+            <table class="breakdown-table">
+                <thead><tr>
+                    <th></th>
+                    <th style="color:#ef4444;">Red</th>
+                    <th style="color:#3b82f6;">Blue</th>
+                </tr></thead>
+                <tbody>
+                    ${scoreRows.map(([label, r, b]) => `<tr>
+                        <td>${label}</td>
+                        <td>${r ?? '—'}</td>
+                        <td>${b ?? '—'}</td>
+                    </tr>`).join('')}
+                    <tr class="breakdown-total">
+                        <td>Total</td>
+                        <td style="color:${redWon  ? '#4ade80' : 'inherit'}">${rbd.totalPoints ?? match.redScore}</td>
+                        <td style="color:${blueWon ? '#4ade80' : 'inherit'}">${bbd.totalPoints ?? match.blueScore}</td>
+                    </tr>
+                    <tr><td colspan="3" style="padding:8px 0 4px; color:#64748b; font-size:0.8em; font-weight:600; text-transform:uppercase; letter-spacing:0.05em;">Ranking Points</td></tr>
+                    ${rpRows.map(([label, r, b]) => `<tr>
+                        <td style="color:#94a3b8;">${label}</td>
+                        <td>${typeof r === 'number' ? r : check(r)}</td>
+                        <td>${typeof b === 'number' ? b : check(b)}</td>
+                    </tr>`).join('')}
+                    <tr class="breakdown-total">
+                        <td>Total RP</td>
+                        <td style="color:#fbbf24;">${totalRedRP}</td>
+                        <td style="color:#fbbf24;">${totalBlueRP}</td>
+                    </tr>
+                </tbody>
+            </table>`;
+    } else {
+        breakdownEl.innerHTML = `<p style="color:#64748b; font-style:italic; font-size:0.9em; margin-top:12px;">Run "Sync TBA Matches" for a detailed breakdown.</p>`;
+    }
+
+    const videoSection = document.getElementById('matchVideoSection');
+    const ytKeys = match.videos || [];
+    if (ytKeys.length === 0) {
+        videoSection.innerHTML = `<p style="color:#64748b; font-style:italic; font-size:0.85em; margin:0;">No match video available.</p>`;
+    } else {
+        videoSection.innerHTML = ytKeys.map((key, i) => {
+            const thumbId = `yt-thumb-${i}`;
+            return `<div id="${thumbId}" onclick="loadYTEmbed('${key}','${thumbId}')"
+                style="position:relative; cursor:pointer; border-radius:8px; overflow:hidden; background:#000; ${i > 0 ? 'margin-top:12px;' : ''}">
+                <img src="https://img.youtube.com/vi/${key}/hqdefault.jpg"
+                    style="width:100%; display:block; opacity:0.85;"
+                    onerror="this.style.display='none'" loading="lazy">
+                <div style="position:absolute; inset:0; display:flex; align-items:center; justify-content:center; pointer-events:none;">
+                    <div style="width:64px; height:44px; background:rgba(255,0,0,0.85); border-radius:10px; display:flex; align-items:center; justify-content:center;">
+                        <div style="border-style:solid; border-width:10px 0 10px 20px; border-color:transparent transparent transparent #fff; margin-left:4px;"></div>
+                    </div>
+                </div>
+            </div>`;
+        }).join('');
+    }
+
     document.getElementById('matchDetailView').style.display = 'flex';
+};
+
+window.openLightbox = function (url) {
+    const lb = document.getElementById('photoLightbox');
+    document.getElementById('lightboxImg').src = url;
+    lb.style.display = 'flex';
+};
+
+window.closeLightbox = function () {
+    document.getElementById('photoLightbox').style.display = 'none';
+    document.getElementById('lightboxImg').src = '';
 };
 
 window.closeMatchDetail = function () {
     document.getElementById('matchDetailView').style.display = 'none';
+    document.getElementById('matchVideoSection').innerHTML = '';
+};
+
+window.loadYTEmbed = function (key, thumbId) {
+    const container = document.getElementById(thumbId);
+    if (!container) return;
+    container.outerHTML = `<div style="position:relative; padding-bottom:56.25%; height:0; overflow:hidden; border-radius:8px;">
+        <iframe src="https://www.youtube-nocookie.com/embed/${key}?autoplay=1"
+            style="position:absolute; top:0; left:0; width:100%; height:100%; border:0;"
+            allow="autoplay; encrypted-media; picture-in-picture" allowfullscreen loading="lazy"></iframe>
+    </div>`;
 };
 
 
@@ -349,8 +475,7 @@ window.refreshPrepHighlight = function () {
             dataset.borderWidth = isFocused ? 2 : 0;
         });
 
-        // Trigger the visual update
-        prepChartInstance.update('none'); // 'none' skips the animation for a snappier feel
+        prepChartInstance.update();
     }
 };
 
@@ -539,7 +664,8 @@ window.syncSchedule = async function () {
             red: m.alliances.red.team_keys.map(t => t.replace('frc', '')),
             blue: m.alliances.blue.team_keys.map(t => t.replace('frc', '')),
             redScore: m.alliances.red.score,
-            blueScore: m.alliances.blue.score
+            blueScore: m.alliances.blue.score,
+            videos: (m.videos || []).filter(v => v.type === 'youtube').map(v => v.key),
         })));
 
         statusDiv.innerText = "✅ Schedule Sync Complete!";
@@ -563,6 +689,9 @@ window.syncAll = async function () {
 
     await window.syncProjections();
     await window.syncSchedule();
+    await window.syncTBAOPR();
+    await window.syncTBAMatches();
+    await renderAtAGlance();
 
     statusDiv.innerText = "🎉 All systems up to date!";
 };
@@ -580,6 +709,7 @@ window.clearCache = async function () {
     try {
         // Clear the teams table in Dexie
         await db.teams.clear();
+        await db.tbaTeams.clear();
 
         // Clear any UI elements
         const statusDiv = document.getElementById('status');
@@ -1013,14 +1143,765 @@ displayTeams();
 
 window.setSort = function (key) {
     if (currentSortKey === key) {
-        currentSortOrder *= -1; // Flip order if clicking same header
+        currentSortOrder *= -1;
     } else {
         currentSortKey = key;
-        currentSortOrder = -1; // Default to highest first for new key
+        currentSortOrder = -1;
     }
     displayTeams();
 };
 
+// ─── OPR COMPUTATION ────────────────────────────────────────────────────────
+
+// Works on local db.matches records (red/blue string arrays, redScore/blueScore).
+// Returns OPR array indexed the same as teamNumbers, or null if underdetermined.
+function computeLocalOPR(matches, teamNumbers) {
+    const keys = teamNumbers.map(String);
+    const n = keys.length;
+    if (n === 0) return null;
+    const idx = Object.fromEntries(keys.map((k, i) => [k, i]));
+    const rows = [], scores = [];
+    for (const m of matches) {
+        if ((m.redScore ?? -1) < 0) continue;
+        for (const [alliance, score] of [
+            [(m.red  || []).map(String), m.redScore ],
+            [(m.blue || []).map(String), m.blueScore]
+        ]) {
+            const row = new Array(n).fill(0);
+            for (const t of alliance) { if (idx[t] !== undefined) row[idx[t]] = 1; }
+            rows.push(row);
+            scores.push(score);
+        }
+    }
+    if (rows.length < n) return null;
+    const ATA = Array.from({ length: n }, () => new Array(n).fill(0));
+    const ATb = new Array(n).fill(0);
+    for (let k = 0; k < rows.length; k++) {
+        for (let i = 0; i < n; i++) {
+            if (!rows[k][i]) continue;
+            ATb[i] += scores[k];
+            for (let j = 0; j < n; j++) ATA[i][j] += rows[k][j];
+        }
+    }
+    return gaussianElim(ATA, ATb);
+}
+
+function gaussianElim(A, b) {
+    const n = b.length;
+    const M = A.map((row, i) => [...row, b[i]]);
+    for (let col = 0; col < n; col++) {
+        let maxRow = col;
+        for (let row = col + 1; row < n; row++) {
+            if (Math.abs(M[row][col]) > Math.abs(M[maxRow][col])) maxRow = row;
+        }
+        [M[col], M[maxRow]] = [M[maxRow], M[col]];
+        if (Math.abs(M[col][col]) < 1e-10) continue;
+        for (let row = 0; row < n; row++) {
+            if (row === col) continue;
+            const f = M[row][col] / M[col][col];
+            for (let k = col; k <= n; k++) M[row][k] -= f * M[col][k];
+        }
+    }
+    return Array.from({ length: n }, (_, i) => M[i][i] === 0 ? 0 : M[i][n] / M[i][i]);
+}
+
+function computeOPR(matches, teamKeys, getScore) {
+    const n = teamKeys.length;
+    if (n === 0) return null;
+    const idx = Object.fromEntries(teamKeys.map((k, i) => [k, i]));
+    const rows = [], scores = [];
+    for (const m of matches) {
+        if (m.comp_level !== 'qm' || !m.alliances) continue;
+        for (const color of ['red', 'blue']) {
+            const score = m.score_breakdown ? getScore(m.score_breakdown[color]) : null;
+            if (score == null || isNaN(score)) continue;
+            const row = new Array(n).fill(0);
+            for (const key of (m.alliances[color].team_keys || [])) {
+                if (idx[key] !== undefined) row[idx[key]] = 1;
+            }
+            rows.push(row);
+            scores.push(score);
+        }
+    }
+    if (rows.length < n) return null;
+    const ATA = Array.from({ length: n }, () => new Array(n).fill(0));
+    const ATb = new Array(n).fill(0);
+    for (let k = 0; k < rows.length; k++) {
+        for (let i = 0; i < n; i++) {
+            if (!rows[k][i]) continue;
+            ATb[i] += scores[k];
+            for (let j = 0; j < n; j++) ATA[i][j] += rows[k][j];
+        }
+    }
+    return gaussianElim(ATA, ATb);
+}
+
+// ─── TBA OPR SYNC ────────────────────────────────────────────────────────────
+
+window.syncTBAOPR = async function () {
+    const eventKey = document.getElementById('eventKeyInput').value.trim().toLowerCase();
+    if (!eventKey) return alert("Please enter an Event Key.");
+    const statusDiv = document.getElementById('status');
+    statusDiv.innerText = "Fetching TBA OPR & COPR data...";
+    try {
+        const [oprData, coprData] = await Promise.all([
+            fetchTBA(`/event/${eventKey}/oprs`),
+            fetchTBA(`/event/${eventKey}/coprs`)
+        ]);
+        if (!oprData?.oprs) throw new Error("No OPR data found. Event may not have played yet.");
+
+        // Detect component fields from COPRs response
+        let autoMap = null, teleopMap = null, endgameMap = null;
+        if (coprData && typeof coprData === 'object' && !coprData.Errors) {
+            const keys = Object.keys(coprData);
+            console.log('[TBA COPRs] Available components:', keys.join(', '));
+            const autoKey   = ['totalAutoPoints',   'autoPoints'].find(k => keys.includes(k));
+            const teleopKey = ['totalTeleopPoints', 'teleopPoints'].find(k => keys.includes(k));
+            if (autoKey)   autoMap   = coprData[autoKey];
+            if (teleopKey) teleopMap = coprData[teleopKey];
+            // Endgame = tower climbing + fuel scored during the endgame window
+            const towerMap      = coprData['endGameTowerPoints']    || null;
+            const endgameFuelMap = coprData['Hub Endgame Fuel Count'] || null;
+            if (towerMap || endgameFuelMap) {
+                const allKeys = Object.keys(towerMap || endgameFuelMap);
+                endgameMap = Object.fromEntries(
+                    allKeys.map(k => [k, (towerMap?.[k] || 0) + (endgameFuelMap?.[k] || 0)])
+                );
+            }
+        }
+
+        const teamKeys = Object.keys(oprData.oprs).sort();
+        const records = teamKeys.map(key => ({
+            teamNumber:  parseInt(key.replace('frc', '')),
+            teamKey:     key,
+            eventKey,
+            opr:        +(oprData.oprs[key]  || 0).toFixed(2),
+            dpr:        +(oprData.dprs[key]  || 0).toFixed(2),
+            ccwm:       +(oprData.ccwms[key] || 0).toFixed(2),
+            autoOPR:    autoMap    ? +(autoMap[key]    || 0).toFixed(2) : null,
+            teleopOPR:  teleopMap  ? +(teleopMap[key]  || 0).toFixed(2) : null,
+            endgameOPR: endgameMap ? +(endgameMap[key] || 0).toFixed(2) : null,
+            lastUpdated: Date.now()
+        }));
+        await db.tbaTeams.bulkPut(records);
+        statusDiv.innerText = `✅ TBA OPR synced for ${records.length} teams.`;
+        await displayTBATeams();
+    } catch (err) {
+        console.error(err);
+        statusDiv.innerText = `❌ TBA OPR Sync Failed: ${err.message}`;
+    }
+};
+
+// Detects score breakdown field names and recomputes component OPRs from stored match data.
+async function recomputeComponentOPRs(matches, eventKey) {
+    const tbaTeams = await db.tbaTeams.where('eventKey').equals(eventKey).toArray();
+    if (tbaTeams.length === 0) return;
+    const teamKeys = tbaTeams.map(t => t.teamKey).sort();
+
+    const sampleBd = matches.find(m => m.score_breakdown?.red)?.score_breakdown?.red;
+    if (!sampleBd) {
+        console.log('[TBA] No score breakdowns available — matches may not have been played yet.');
+        return;
+    }
+    const fields = Object.keys(sampleBd);
+    console.log('[TBA] Score breakdown fields:', fields.join(', '));
+
+    const autoF    = ['autoPoints'].find(f => fields.includes(f));
+    const teleopF  = ['teleopPoints'].find(f => fields.includes(f));
+    const endgameF = ['endgamePoints', 'endGamePoints', 'endgameBargePoints', 'endgameTotalStagePoints']
+                       .find(f => fields.includes(f));
+    console.log(`[TBA] Mapping → auto:${autoF} | teleop:${teleopF} | endgame:${endgameF}`);
+
+    const autoOPRs    = autoF    ? computeOPR(matches, teamKeys, bd => bd?.[autoF]    ?? null) : null;
+    const teleopOPRs  = teleopF  ? computeOPR(matches, teamKeys, bd => bd?.[teleopF]  ?? null) : null;
+    const endgameOPRs = endgameF ? computeOPR(matches, teamKeys, bd => bd?.[endgameF] ?? null) : null;
+
+    const updates = tbaTeams.map(team => {
+        const i = teamKeys.indexOf(team.teamKey);
+        if (i === -1) return team;
+        return {
+            ...team,
+            autoOPR:    autoOPRs    ? +autoOPRs[i].toFixed(2)    : null,
+            teleopOPR:  teleopOPRs  ? +teleopOPRs[i].toFixed(2)  : null,
+            endgameOPR: endgameOPRs ? +endgameOPRs[i].toFixed(2) : null,
+        };
+    });
+    await db.tbaTeams.bulkPut(updates);
+}
+
+window.syncTBAMatches = async function () {
+    const eventKey = document.getElementById('eventKeyInput').value.trim().toLowerCase();
+    if (!eventKey) return alert("Please enter an Event Key.");
+    const statusDiv = document.getElementById('status');
+    statusDiv.innerText = "Fetching full match data from TBA...";
+    try {
+        const matches = await fetchTBA(`/event/${eventKey}/matches`);
+        if (!Array.isArray(matches)) throw new Error("Invalid match data from TBA.");
+
+        const qualMatches = matches
+            .filter(m => m.comp_level === 'qm')
+            .sort((a, b) => a.match_number - b.match_number);
+
+        const records = qualMatches.map(m => ({
+            key:          m.key,
+            eventKey,
+            matchNumber:  m.match_number,
+            red:          (m.alliances?.red?.team_keys  || []).map(k => k.replace('frc', '')),
+            blue:         (m.alliances?.blue?.team_keys || []).map(k => k.replace('frc', '')),
+            redScore:     m.alliances?.red?.score  ?? -1,
+            blueScore:    m.alliances?.blue?.score ?? -1,
+            redBreakdown:  m.score_breakdown?.red  || null,
+            blueBreakdown: m.score_breakdown?.blue || null,
+            videos: (m.videos || []).filter(v => v.type === 'youtube').map(v => v.key),
+        }));
+        await db.matches.bulkPut(records);
+
+        statusDiv.innerText = `✅ TBA Matches synced (${records.length} qual matches).`;
+    } catch (err) {
+        console.error(err);
+        statusDiv.innerText = `❌ TBA Matches Sync Failed: ${err.message}`;
+    }
+};
+
+
+// ─── TBA CHART & TABLE ───────────────────────────────────────────────────────
+
+let tbaChartInstance = null;
+let tbaSortColumn = 'opr';
+let tbaSortOrder = 1;
+let matchInfluenceChartInstance = null;
+let currentTBATab = 'teams';
+
+window.sortTBABy = function (column) {
+    if (tbaSortColumn === column) {
+        tbaSortOrder *= -1;
+    } else {
+        tbaSortColumn = column;
+        tbaSortOrder = column === 'teamNumber' ? -1 : 1;
+    }
+    displayTBATeams();
+};
+
+function renderTBAChart(teams) {
+    const ctx = document.getElementById('tbaComparisonChart').getContext('2d');
+    if (tbaChartInstance) tbaChartInstance.destroy();
+    const hasComponents = teams.some(t => t.autoOPR != null);
+    const labels = teams.map(t => t.teamNumber.toString());
+    const datasets = hasComponents ? [
+        { label: 'Auto OPR',    data: teams.map(t => t.autoOPR    || 0), backgroundColor: '#fbbf24', stack: 'OPR' },
+        { label: 'Teleop OPR',  data: teams.map(t => t.teleopOPR  || 0), backgroundColor: '#3b82f6', stack: 'OPR' },
+        { label: 'Endgame OPR', data: teams.map(t => t.endgameOPR || 0), backgroundColor: '#10b981', stack: 'OPR' }
+    ] : [
+        { label: 'OPR', data: teams.map(t => t.opr || 0), backgroundColor: '#3b82f6', stack: 'OPR' }
+    ];
+    tbaChartInstance = new Chart(ctx, {
+        type: 'bar',
+        data: { labels, datasets },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            scales: {
+                x: { stacked: true, grid: { display: false }, ticks: { color: '#94a3b8', font: { size: 10 } } },
+                y: { beginAtZero: true, stacked: true, grid: { color: '#334155' }, ticks: { color: '#94a3b8' },
+                     title: { display: true, text: 'OPR', color: '#94a3b8' } }
+            },
+            plugins: {
+                legend: { position: 'top', labels: { color: '#f8fafc', usePointStyle: true } },
+                tooltip: { mode: 'index', intersect: false }
+            }
+        }
+    });
+}
+
+window.displayTBATeams = async function () {
+    const allTeams = await db.tbaTeams.toArray();
+    const allMatches = await db.matches.toArray();
+    const tableBody = document.getElementById('tbaBody');
+    const table = document.getElementById('tbaTable');
+    const globalIgnoreNote = document.getElementById('tbaGlobalIgnoreNote');
+    if (allTeams.length === 0) { table.style.display = 'none'; return; }
+
+    // Recompute OPR excluding any globally ignored matches.
+    const globalIgnored = new Set(allMatches.filter(m => m.globallyIgnored).map(m => m.key));
+    let globalOPRMap = null;
+    if (globalIgnored.size > 0) {
+        const teamNums = allTeams.map(t => t.teamNumber);
+        const activePlayed = allMatches.filter(m =>
+            (m.redScore ?? -1) >= 0 && (m.blueScore ?? -1) >= 0 && !globalIgnored.has(m.key)
+        );
+        const recomputed = computeLocalOPR(activePlayed, teamNums);
+        if (recomputed) {
+            globalOPRMap = Object.fromEntries(teamNums.map((num, i) => [num, recomputed[i]]));
+        }
+    }
+    if (globalIgnoreNote) {
+        if (globalIgnored.size > 0) {
+            globalIgnoreNote.textContent = `OPRs recomputed excluding ${globalIgnored.size} globally ignored match${globalIgnored.size > 1 ? 'es' : ''}.`;
+            globalIgnoreNote.style.display = 'block';
+        } else {
+            globalIgnoreNote.style.display = 'none';
+        }
+    }
+
+    // Use individually-ignored LOO, then globally-recomputed OPR, then raw TBA OPR.
+    const effOPR = t => {
+        if (t.ignoredMatchKey && t.adjustedOPR != null && !globalIgnored.has(t.ignoredMatchKey))
+            return t.adjustedOPR;
+        if (globalOPRMap) return globalOPRMap[t.teamNumber] ?? (t.opr || 0);
+        return t.opr || 0;
+    };
+
+    allTeams.sort((a, b) => {
+        let valA, valB;
+        switch (tbaSortColumn) {
+            case 'teamNumber': valA = a.teamNumber;    valB = b.teamNumber;    break;
+            case 'dpr':        valA = a.dpr    || 0;   valB = b.dpr    || 0;   break;
+            case 'ccwm':       valA = a.ccwm   || 0;   valB = b.ccwm   || 0;   break;
+            case 'autoOPR':    valA = a.autoOPR    ?? 0; valB = b.autoOPR    ?? 0; break;
+            case 'teleopOPR':  valA = a.teleopOPR  ?? 0; valB = b.teleopOPR  ?? 0; break;
+            case 'endgameOPR': valA = a.endgameOPR ?? 0; valB = b.endgameOPR ?? 0; break;
+            default:           valA = effOPR(a);  valB = effOPR(b);
+        }
+        return (parseFloat(valB) - parseFloat(valA)) * tbaSortOrder;
+    });
+    const oprs = allTeams.map(effOPR);
+    const minOPR = Math.min(...oprs), maxOPR = Math.max(...oprs);
+    renderTBAChart(allTeams);
+    table.style.display = 'table';
+    tableBody.innerHTML = '';
+    const hasComponents = allTeams.some(t => t.autoOPR != null);
+    allTeams.forEach(team => {
+        const eff = effOPR(team);
+        const pct = maxOPR === minOPR ? 0.5 : (eff - minOPR) / (maxOPR - minOPR);
+        const rowColor = getRowColor(pct);
+        const row = document.createElement('tr');
+        row.style.backgroundColor = rowColor.replace('rgb', 'rgba').replace(')', ', 0.15)');
+        row.style.borderLeft = `6px solid ${rowColor}`;
+        row.style.cursor = 'pointer';
+        row.onclick = () => viewTeamDetail(team.teamNumber);
+        const oprCell = team.ignoredMatchKey
+            ? `${eff.toFixed(1)}&thinsp;<span style="color:#fbbf24; font-size:0.7em; font-weight:600;">LOO</span>`
+            : eff.toFixed(1);
+        row.innerHTML = `
+            <td><strong>${team.teamNumber}</strong></td>
+            <td>${oprCell}</td>
+            <td>${team.dpr.toFixed(1)}</td>
+            <td style="color:${team.ccwm >= 0 ? '#4ade80' : '#f87171'}">${team.ccwm.toFixed(1)}</td>
+            <td style="color:#aaa;">${hasComponents && team.autoOPR   != null ? team.autoOPR.toFixed(1)   : '—'}</td>
+            <td style="color:#aaa;">${hasComponents && team.teleopOPR  != null ? team.teleopOPR.toFixed(1)  : '—'}</td>
+            <td style="color:#aaa;">${hasComponents && team.endgameOPR != null ? team.endgameOPR.toFixed(1) : '—'}</td>
+        `;
+        tableBody.appendChild(row);
+    });
+};
+
+
+// ─── HOME: AT A GLANCE ───────────────────────────────────────────────────────
+
+let glanceSortColumn = 'rp';
+let glanceSortOrder  = 1; // 1 = descending
+
+window.switchHomeTab = function (tab) {
+    ['setup', 'overview'].forEach(t => {
+        document.getElementById(`home-tab-${t}`).style.display = t === tab ? 'block' : 'none';
+    });
+    document.querySelectorAll('#homeTabs .detail-tab-btn').forEach((btn, i) => {
+        btn.classList.toggle('active', ['setup', 'overview'][i] === tab);
+    });
+    if (tab === 'overview') renderAtAGlance();
+};
+
+window.sortGlanceBy = function (col) {
+    if (glanceSortColumn === col) {
+        glanceSortOrder *= -1;
+    } else {
+        glanceSortColumn = col;
+        glanceSortOrder  = 1;
+    }
+    renderAtAGlance();
+};
+
+async function renderAtAGlance() {
+    const statusEl = document.getElementById('atAGlanceStatus');
+    const table    = document.getElementById('atAGlanceTable');
+    const tbody    = document.getElementById('atAGlanceBody');
+    if (!statusEl || !table || !tbody) return;
+
+    const [allTeams, allTBATeams, allMatches] = await Promise.all([
+        db.teams.toArray(), db.tbaTeams.toArray(), db.matches.toArray()
+    ]);
+
+    if (!allTeams.length) {
+        statusEl.textContent = 'No team data — sync Statbotics first.';
+        table.style.display = 'none';
+        return;
+    }
+
+    // ── Effective OPR (mirrors displayTBATeams) ──────────────────────────────
+    const globalIgnored = new Set(allMatches.filter(m => m.globallyIgnored).map(m => m.key));
+    const tbaTeamMap    = Object.fromEntries(allTBATeams.map(t => [t.teamNumber, t]));
+
+    let globalOPRMap = null;
+    if (globalIgnored.size > 0) {
+        const teamNums   = allTBATeams.map(t => t.teamNumber);
+        const activePlayed = allMatches.filter(m =>
+            (m.redScore ?? -1) >= 0 && (m.blueScore ?? -1) >= 0 && !globalIgnored.has(m.key)
+        );
+        const recomputed = computeLocalOPR(activePlayed, teamNums);
+        if (recomputed) globalOPRMap = Object.fromEntries(teamNums.map((n, i) => [n, recomputed[i]]));
+    }
+
+    const effOPR = tba => {
+        if (!tba) return null;
+        if (tba.ignoredMatchKey && tba.adjustedOPR != null && !globalIgnored.has(tba.ignoredMatchKey))
+            return tba.adjustedOPR;
+        if (globalOPRMap) return globalOPRMap[tba.teamNumber] ?? tba.opr ?? null;
+        return tba.opr ?? null;
+    };
+
+    // ── Ranking points from match history ────────────────────────────────────
+    const rpMap = {};
+    const playedMatches = allMatches.filter(m => (m.redScore ?? -1) >= 0);
+    let hasBreakdown = false;
+
+    for (const m of playedMatches) {
+        const redWon  = m.redScore  > m.blueScore;
+        const blueWon = m.blueScore > m.redScore;
+        const tie     = m.redScore  === m.blueScore;
+
+        // Use TBA's pre-computed rankingPoints when available; otherwise compute from
+        // match result (3/1/0) + 2026 bonus RPs (Energized, Supercharged, Traversal).
+        const bonusRP = bd => bd ? (
+            (bd.energizedAchieved    ? 1 : 0) +
+            (bd.superchargedAchieved ? 1 : 0) +
+            (bd.traversalAchieved    ? 1 : 0)
+        ) : 0;
+        const redRP  = m.redBreakdown?.rp  ?? ((redWon  ? 3 : tie ? 1 : 0) + bonusRP(m.redBreakdown));
+        const blueRP = m.blueBreakdown?.rp ?? ((blueWon ? 3 : tie ? 1 : 0) + bonusRP(m.blueBreakdown));
+        if (m.redBreakdown != null) hasBreakdown = true;
+
+        for (const team of (m.red  || [])) {
+            if (!rpMap[team]) rpMap[team] = { rp: 0, played: 0, wins: 0, ties: 0, losses: 0 };
+            rpMap[team].rp += redRP;  rpMap[team].played++;
+            if (redWon) rpMap[team].wins++; else if (tie) rpMap[team].ties++; else rpMap[team].losses++;
+        }
+        for (const team of (m.blue || [])) {
+            if (!rpMap[team]) rpMap[team] = { rp: 0, played: 0, wins: 0, ties: 0, losses: 0 };
+            rpMap[team].rp += blueRP; rpMap[team].played++;
+            if (blueWon) rpMap[team].wins++; else if (tie) rpMap[team].ties++; else rpMap[team].losses++;
+        }
+    }
+
+    // ── Build rows ────────────────────────────────────────────────────────────
+    const rows = allTeams.map(team => {
+        const tn      = parseInt(team.teamNumber);
+        const tba     = tbaTeamMap[tn];
+        const rp      = rpMap[String(tn)] || { rp: 0, played: 0, wins: 0, ties: 0, losses: 0 };
+        const opr     = effOPR(tba);
+        const analysis = team.analysis || {};
+        const hasCeil  = analysis.ceiling != null && analysis.ceiling !== '—';
+        const epaVal   = hasCeil ? parseFloat(analysis.ceiling) : (team.currentEPA || 0);
+        const hasLOO   = tba?.ignoredMatchKey && tba.adjustedOPR != null && !globalIgnored.has(tba.ignoredMatchKey);
+        const hasAdj   = !hasLOO && globalOPRMap != null;
+        return { team, tba, rp, opr, epaVal, hasCeil, hasLOO, hasAdj };
+    });
+
+    const hasOPR = allTBATeams.length > 0;
+    const hasRP  = playedMatches.length > 0;
+
+    // ── Composite score + tier (must run before sort) ────────────────────────
+    // Composite = average of EPA and OPR percentile ranks (0 = best, 1 = worst).
+    // Tier cutoffs: top 8 → S, next 12 → A, next 12 → B, rest → C.
+    {
+        const pctRank = (arr, val) => {
+            const sorted = [...arr].sort((a, b) => b - a);
+            const idx = sorted.findIndex(v => v <= val + 0.001);
+            return idx < 0 ? 1 : idx / (sorted.length || 1);
+        };
+        const epaVals = rows.map(r => r.epaVal);
+        const oprVals = rows.map(r => r.opr ?? 0);
+        const hasAnyOPR = rows.some(r => r.opr != null);
+        const composite = r => {
+            const ep = pctRank(epaVals, r.epaVal);
+            if (!hasAnyOPR) return ep;
+            return (ep + pctRank(oprVals, r.opr ?? 0)) / 2;
+        };
+        rows.forEach(r => { r.composite = composite(r); });
+        const tierOrder = [...rows].sort((a, b) => a.composite - b.composite);
+        const tierMap = new Map(tierOrder.map((r, i) => [
+            r.team.teamNumber,
+            i < 8 ? 'S' : i < 20 ? 'A' : i < 32 ? 'B' : 'C'
+        ]));
+        rows.forEach(r => { r.tier = tierMap.get(r.team.teamNumber); });
+    }
+
+    // Sort — default rp desc
+    rows.sort((a, b) => {
+        let va, vb;
+        switch (glanceSortColumn) {
+            case 'epa':       va = a.epaVal;       vb = b.epaVal;       break;
+            case 'opr':       va = a.opr ?? -999;  vb = b.opr ?? -999;  break;
+            case 'composite': va = -a.composite;   vb = -b.composite;   break;
+            default:          va = a.rp.rp;        vb = b.rp.rp;        break;
+        }
+        return (vb - va) * glanceSortOrder || (b.epaVal - a.epaVal);
+    });
+
+    // Compute RP-based rank separately so it stays stable regardless of current sort
+    const rpRank = Object.fromEntries(
+        [...rows].sort((a, b) => b.rp.rp - a.rp.rp || b.epaVal - a.epaVal)
+                 .map((r, i) => [r.team.teamNumber, i + 1])
+    );
+    const TIER = {
+        S: { color: '#f59e0b', bg: 'rgba(245,158,11,0.08)'  },
+        A: { color: '#4ade80', bg: 'rgba(74,222,128,0.07)'  },
+        B: { color: '#60a5fa', bg: 'rgba(96,165,250,0.06)'  },
+        C: { color: '#64748b', bg: 'rgba(100,116,139,0.03)' },
+    };
+
+    table.style.display = 'table';
+    tbody.innerHTML = rows.map(r => {
+        const { team, rp, opr, epaVal, hasCeil, hasLOO, hasAdj, composite } = r;
+        const rank    = hasRP ? rpRank[team.teamNumber] : '—';
+        const record  = hasRP ? `${rp.wins}–${rp.ties}–${rp.losses}` : null;
+        const rpStr   = hasRP ? rp.rp : '—';
+        const compStr = composite != null ? ((1 - composite) * 100).toFixed(1) : '—';
+        const epaStr  = epaVal.toFixed(1);
+        const ceilBadge = hasCeil
+            ? `<span style="color:#4ade80; font-size:0.65em; font-weight:600; margin-left:3px;">CEIL</span>` : '';
+        const oprStr  = opr != null ? opr.toFixed(1) : '—';
+        const oprBadge = hasLOO
+            ? `<span style="color:#fbbf24; font-size:0.65em; font-weight:600; margin-left:3px;">LOO</span>`
+            : hasAdj
+                ? `<span style="color:#f97316; font-size:0.65em; font-weight:600; margin-left:3px;">ADJ</span>`
+                : '';
+
+        const tier = r.tier;
+        const ts   = TIER[tier];
+        const td = (content, center = true) =>
+            `<td style="padding:13px 10px; border-bottom:1px solid #1e293b;${center ? ' text-align:center;' : ''}">${content}</td>`;
+        const rankCell = `<td style="padding:13px 10px; border-bottom:1px solid #1e293b; text-align:center; box-shadow:inset 3px 0 0 ${ts.color};">
+            <div style="display:flex; flex-direction:column; align-items:center; gap:2px;">
+                <span style="color:${ts.color}; font-size:0.75em; font-weight:800; letter-spacing:0.08em;">${tier}</span>
+                <span style="color:#64748b; font-weight:700;">${rank}</span>
+            </div>
+        </td>`;
+
+        const teamCell = `<td style="padding:13px 10px; border-bottom:1px solid #1e293b;">
+            <strong style="color:#f8fafc;">${team.teamNumber}</strong>
+            <span style="color:#94a3b8; font-size:0.9em; font-weight:600; margin-left:6px;">${team.teamName || ''}</span>
+            ${record ? `<div style="color:#94a3b8; font-size:0.85em; font-weight:600; margin-top:3px;">${record}</div>` : ''}
+        </td>`;
+
+        return `<tr style="cursor:pointer; background:${ts.bg};" onclick="viewTeamDetail(${team.teamNumber})">
+            ${rankCell}
+            ${teamCell}
+            ${td(`<strong style="color:${ts.color};">${compStr}</strong>`)}
+            ${td(`<strong style="color:#f8fafc;">${rpStr}</strong>`)}
+            ${td(`<strong>${epaStr}</strong>${ceilBadge}`)}
+            ${td(hasOPR ? `<strong>${oprStr}</strong>${oprBadge}` : '—')}
+        </tr>`;
+    }).join('');
+
+    statusEl.textContent = !hasRP
+        ? 'Sync schedule to see records and ranking points.'
+        : !hasBreakdown
+            ? 'Ranking points show win/tie/loss only — run "Sync TBA Matches" to include bonus RPs.'
+            : '';
+}
+
+// ─── TBA MATCH INFLUENCE TAB ────────────────────────────────────────────────
+
+window.switchTBATab = function (tab) {
+    currentTBATab = tab;
+    document.getElementById('tba-tab-teams').style.display   = tab === 'teams'   ? 'block' : 'none';
+    document.getElementById('tba-tab-matches').style.display = tab === 'matches' ? 'block' : 'none';
+    document.querySelectorAll('#tbaTabs .detail-tab-btn').forEach((btn, i) => {
+        btn.classList.toggle('active', ['teams', 'matches'][i] === tab);
+    });
+    if (tab === 'matches') renderMatchInfluenceTab();
+};
+
+// Returns [{m, influence, isIgnored}] for every played match.
+// influence = Σ|ΔOPR| across all teams when this match is removed (or added back if ignored).
+async function computeMatchInfluences() {
+    const allTBATeams  = await db.tbaTeams.toArray();
+    const allMatches   = await db.matches.toArray();
+    if (!allTBATeams.length) return null;
+
+    const allTeamNums   = allTBATeams.map(t => t.teamNumber);
+    const globalIgnored = new Set(allMatches.filter(m => m.globallyIgnored).map(m => m.key));
+    const allPlayed     = allMatches.filter(m => (m.redScore ?? -1) >= 0 && (m.blueScore ?? -1) >= 0);
+    const activePlayed  = allPlayed.filter(m => !globalIgnored.has(m.key));
+
+    const baseOPRs = computeLocalOPR(activePlayed, allTeamNums);
+    if (!baseOPRs) return null;
+
+    return allPlayed.map(m => {
+        const isIgnored = globalIgnored.has(m.key);
+        // Non-ignored: LOO (remove m). Ignored: reverse (add m back to active set).
+        const subset   = isIgnored ? [...activePlayed, m] : activePlayed.filter(pm => pm.key !== m.key);
+        const looOPRs  = computeLocalOPR(subset, allTeamNums);
+        const influence = looOPRs
+            ? baseOPRs.reduce((sum, opr, i) => sum + Math.abs(opr - looOPRs[i]), 0)
+            : null;
+        return { m, influence, isIgnored };
+    });
+}
+
+function renderMatchInfluenceChart(sorted) {
+    const ctx = document.getElementById('matchInfluenceChart');
+    if (!ctx) return;
+    if (matchInfluenceChartInstance) matchInfluenceChartInstance.destroy();
+
+    const influences = sorted.map(r => r.influence ?? 0);
+    const total = influences.reduce((s, v) => s + v, 0);
+    let cum = 0;
+    const cdfData = influences.map(v => {
+        cum += v;
+        return total > 0 ? +((cum / total) * 100).toFixed(1) : 0;
+    });
+
+    matchInfluenceChartInstance = new Chart(ctx, {
+        data: {
+            labels: sorted.map(r => `Q${r.m.matchNumber}`),
+            datasets: [
+                {
+                    type: 'bar',
+                    label: 'Influence (Σ|ΔOPR|)',
+                    data: influences,
+                    backgroundColor: sorted.map(r => r.isIgnored ? '#334155' : '#3b82f6'),
+                    yAxisID: 'y',
+                    order: 2
+                },
+                {
+                    type: 'line',
+                    label: 'Cumulative %',
+                    data: cdfData,
+                    borderColor: '#f59e0b',
+                    backgroundColor: 'transparent',
+                    pointRadius: 0,
+                    borderWidth: 2,
+                    yAxisID: 'y2',
+                    order: 1
+                }
+            ]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            scales: {
+                x: { grid: { display: false }, ticks: { color: '#94a3b8', font: { size: 10 }, maxRotation: 45 } },
+                y: {
+                    beginAtZero: true,
+                    grid: { color: '#334155' },
+                    ticks: { color: '#94a3b8' },
+                    title: { display: true, text: 'Σ|ΔOPR|', color: '#94a3b8' }
+                },
+                y2: {
+                    position: 'right',
+                    beginAtZero: true,
+                    max: 100,
+                    grid: { display: false },
+                    ticks: { color: '#f59e0b', callback: v => v + '%' },
+                    title: { display: true, text: 'Cumulative %', color: '#f59e0b' }
+                }
+            },
+            plugins: {
+                legend: { position: 'top', labels: { color: '#f8fafc', usePointStyle: true } },
+                tooltip: { mode: 'index', intersect: false }
+            }
+        }
+    });
+}
+
+window.renderMatchInfluenceTab = async function () {
+    const statusEl     = document.getElementById('matchInfluenceStatus');
+    const tableBody    = document.getElementById('matchInfluenceBody');
+    const tableWrapper = document.getElementById('matchInfluenceTable');
+    const chartWrapper = document.getElementById('matchInfluenceChartContainer');
+    if (!statusEl || !tableBody) return;
+
+    statusEl.innerText = 'Computing match influences…';
+    tableWrapper.style.display = 'none';
+    chartWrapper.style.display = 'none';
+
+    const results = await computeMatchInfluences();
+    if (!results) {
+        statusEl.innerText = 'Run "Sync TBA OPR" and "Sync Schedule" first.';
+        return;
+    }
+    statusEl.innerText = '';
+
+    // Sort by influence descending; globally-ignored shown interleaved by their re-inclusion influence.
+    const sorted = [...results].sort((a, b) => (b.influence ?? 0) - (a.influence ?? 0));
+
+    chartWrapper.style.display = 'block';
+    tableWrapper.style.display = 'table';
+    renderMatchInfluenceChart(sorted);
+
+    tableBody.innerHTML = sorted.map(r => {
+        const { m, influence, isIgnored } = r;
+        const played   = (m.redScore ?? -1) >= 0;
+        const redWon   = played && m.redScore  > m.blueScore;
+        const blueWon  = played && m.blueScore > m.redScore;
+        const resultCell = played
+            ? `<span style="color:${redWon  ? '#4ade80' : '#94a3b8'}; font-weight:${redWon  ? 'bold' : 'normal'}">${m.redScore}</span>
+               <span style="color:#475569"> – </span>
+               <span style="color:${blueWon ? '#4ade80' : '#94a3b8'}; font-weight:${blueWon ? 'bold' : 'normal'}">${m.blueScore}</span>`
+            : '<span style="color:#475569; font-style:italic;">Upcoming</span>';
+
+        const redTeams  = (m.red  || []).map(t =>
+            `<span onclick="event.stopPropagation();viewTeamDetail(${t})" style="color:#ef4444;cursor:pointer;">${t}</span>`
+        ).join(' ');
+        const blueTeams = (m.blue || []).map(t =>
+            `<span onclick="event.stopPropagation();viewTeamDetail(${t})" style="color:#3b82f6;cursor:pointer;">${t}</span>`
+        ).join(' ');
+
+        const influenceDisplay = influence != null
+            ? `${influence.toFixed(2)}${isIgnored ? '<span title="Re-inclusion influence" style="color:#64748b; font-size:0.8em;">*</span>' : ''}`
+            : '—';
+
+        const matchLabel = `Q${m.matchNumber}${isIgnored
+            ? ' <span style="color:#f59e0b; font-size:0.7em; font-weight:600;">IGNORED</span>' : ''}`;
+
+        const actionBtn = `<button onclick="event.stopPropagation();setGloballyIgnored('${m.key}',${!isIgnored})"
+            style="padding:4px 14px; font-size:0.85em; background:${isIgnored ? '#92400e' : '#1e293b'}; border:1px solid ${isIgnored ? '#d97706' : '#475569'}; color:${isIgnored ? '#fde68a' : '#94a3b8'}; border-radius:4px; cursor:pointer;">
+            ${isIgnored ? 'Restore' : 'Ignore'}
+        </button>`;
+
+        return `<tr onclick="viewMatchDetail('${m.key}')" style="cursor:pointer; opacity:${isIgnored ? '0.55' : '1'};">
+            <td style="padding:12px 8px; font-weight:bold; color:#f8fafc;">${matchLabel}</td>
+            <td style="padding:12px 8px;">${redTeams}</td>
+            <td style="padding:12px 8px;">${blueTeams}</td>
+            <td style="padding:12px 8px; white-space:nowrap;">${resultCell}</td>
+            <td style="padding:12px 8px; font-weight:bold; color:#f8fafc;">${influenceDisplay}</td>
+            <td style="padding:12px 8px;" onclick="event.stopPropagation();">${actionBtn}</td>
+        </tr>`;
+    }).join('');
+};
+
+window.setGloballyIgnored = async function (matchKey, ignored) {
+    await db.matches.update(matchKey, { globallyIgnored: ignored || null });
+
+    // When globally ignoring a match, clear any individual ignores of that same match.
+    if (ignored) {
+        const affected = await db.tbaTeams.filter(t => t.ignoredMatchKey === matchKey).toArray();
+        if (affected.length > 0) {
+            await Promise.all(affected.map(t =>
+                db.tbaTeams.update(t.teamNumber, { ignoredMatchKey: null, adjustedOPR: null })
+            ));
+        }
+    }
+
+    await displayTBATeams();
+    if (currentTBATab === 'matches') await renderMatchInfluenceTab();
+    if (activeTBAData) {
+        activeTBAData = await db.tbaTeams.get(activeTBAData.teamNumber);
+        await renderTBADetail(activeTBAData.teamNumber, activeTBAData);
+        if (activeTeamData) await renderOverview(activeTeamData, activeTBAData);
+    }
+};
 
 window.viewTeamDetail = async function (teamNumber) {
     activeTeamNumber = teamNumber; // <--- ADD THIS LINE
@@ -1045,6 +1926,10 @@ window.viewTeamDetail = async function (teamNumber) {
     if (statLink) {
         statLink.href = `https://www.statbotics.io/team/${teamNumber}/2026`;
     }
+    const tbaTeamLink = document.getElementById('tbaTeamLink');
+    if (tbaTeamLink) {
+        tbaTeamLink.href = `https://www.thebluealliance.com/team/${teamNumber}/2026`;
+    }
 
     // --- FIX: The Safe Check ---
     // If analysis is null, provide default "blank" values
@@ -1065,7 +1950,9 @@ window.viewTeamDetail = async function (teamNumber) {
         </div>
     `;
 
-    renderChart(team);
+    activeTeamData = team;
+    activeTBAData = await db.tbaTeams.get(teamNumber) || await db.tbaTeams.get(parseInt(teamNumber));
+    switchDetailTab('overview');
 
     window.switchView('teamDetailView');
 };
@@ -1079,13 +1966,12 @@ window.closeDetail = function () {
 window.currentView = 'scheduleView';
 window.previousView = 'scheduleView';
 
-window.switchView = function (viewId) {
+window.switchView = function (viewId, btn) {
     // 1. Hide the current view
     const current = document.getElementById(window.currentView);
     if (current) current.style.display = 'none';
 
     // 2. Store the current view as 'previous' before we swap
-    // (Only if we aren't switching TO the same view)
     if (window.currentView !== viewId) {
         window.previousView = window.currentView;
     }
@@ -1097,9 +1983,349 @@ window.switchView = function (viewId) {
         window.currentView = viewId;
     }
 
-    // 4. Update the Back button label on the Team Detail page
+    // 4. Update top-nav active state when a nav button triggered the switch
+    if (btn instanceof HTMLElement) {
+        document.querySelectorAll('.top-nav .nav-btn').forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+    }
+
+    // 5. Lazy-render tools tab when first opened
+    if (viewId === 'toolsView' && currentToolsTab === 'picklist') renderPickList();
+
+    // 6. Update the Back button label on the Team Detail page
     updateDetailBackButton();
 };
+
+let currentAnalysisTab = 'statbotics';
+window.switchAnalysisTab = function (tab) {
+    currentAnalysisTab = tab;
+    ['statbotics', 'tba', 'scouting'].forEach(t => {
+        document.getElementById(`analysis-tab-${t}`).style.display = t === tab ? 'block' : 'none';
+    });
+    document.querySelectorAll('#analysisTabs .detail-tab-btn').forEach((btn, i) => {
+        btn.classList.toggle('active', ['statbotics', 'tba', 'scouting'][i] === tab);
+    });
+};
+
+// ─── TOOLS TAB ──────────────────────────────────────────────────────────────
+
+let currentToolsTab = 'picklist';
+window.switchToolsTab = function (tab) {
+    currentToolsTab = tab;
+    ['picklist', 'draft'].forEach(t => {
+        document.getElementById(`tools-tab-${t}`).style.display = t === tab ? 'block' : 'none';
+    });
+    document.querySelectorAll('#toolsTabs .detail-tab-btn').forEach((btn, i) => {
+        btn.classList.toggle('active', ['picklist', 'draft'][i] === tab);
+    });
+    if (tab === 'picklist') renderPickList();
+};
+
+// ── Pick List ────────────────────────────────────────────────────────────────
+
+function loadPickOrder() {
+    try { return JSON.parse(localStorage.getItem('pickListOrder')) || []; }
+    catch { return []; }
+}
+
+function savePickOrder() {
+    const order = [...document.querySelectorAll('#pickListBody tr')]
+        .map(r => r.dataset.separator ? '---separator---' : (r.dataset.team || null))
+        .filter(x => x !== null);
+    localStorage.setItem('pickListOrder', JSON.stringify(order));
+}
+
+function refreshPickPositions() {
+    let pos = 1;
+    document.querySelectorAll('#pickListBody tr').forEach(row => {
+        if (row.dataset.separator) return;
+        const el = row.querySelector('.pick-pos');
+        if (el) el.textContent = pos++;
+    });
+}
+
+window.resetPickList = async function () {
+    localStorage.removeItem('pickListOrder');
+    await renderPickList();
+};
+
+window.dnpTeam = function (teamNumber) {
+    const tbody = document.getElementById('pickListBody');
+    if (!tbody) return;
+    const row = tbody.querySelector(`tr[data-team="${teamNumber}"]`);
+    if (!row) return;
+    tbody.appendChild(row);       // move to bottom of list
+    refreshPickPositions();
+    savePickOrder();
+};
+
+async function renderPickList() {
+    const table    = document.getElementById('pickListTable');
+    const tbody    = document.getElementById('pickListBody');
+    const statusEl = document.getElementById('pickListStatus');
+    if (!table || !tbody) return;
+
+    const [allTeams, allTBATeams, allMatches] = await Promise.all([
+        db.teams.toArray(), db.tbaTeams.toArray(), db.matches.toArray()
+    ]);
+
+    if (!allTeams.length) {
+        if (statusEl) statusEl.textContent = 'No team data — sync Statbotics first.';
+        table.style.display = 'none';
+        return;
+    }
+
+    // effOPR — mirrors renderAtAGlance
+    const globalIgnored = new Set(allMatches.filter(m => m.globallyIgnored).map(m => m.key));
+    const tbaTeamMap    = Object.fromEntries(allTBATeams.map(t => [t.teamNumber, t]));
+    let globalOPRMap = null;
+    if (globalIgnored.size > 0) {
+        const teamNums     = allTBATeams.map(t => t.teamNumber);
+        const activePlayed = allMatches.filter(m =>
+            (m.redScore ?? -1) >= 0 && (m.blueScore ?? -1) >= 0 && !globalIgnored.has(m.key)
+        );
+        const recomputed = computeLocalOPR(activePlayed, teamNums);
+        if (recomputed) globalOPRMap = Object.fromEntries(teamNums.map((n, i) => [n, recomputed[i]]));
+    }
+    const effOPR = tba => {
+        if (!tba) return null;
+        if (tba.ignoredMatchKey && tba.adjustedOPR != null && !globalIgnored.has(tba.ignoredMatchKey))
+            return tba.adjustedOPR;
+        if (globalOPRMap) return globalOPRMap[tba.teamNumber] ?? tba.opr ?? null;
+        return tba.opr ?? null;
+    };
+
+    // RP totals
+    const rpMap = {};
+    const playedMatches = allMatches.filter(m => (m.redScore ?? -1) >= 0);
+    for (const m of playedMatches) {
+        const redWon = m.redScore > m.blueScore, blueWon = m.blueScore > m.redScore, tie = m.redScore === m.blueScore;
+        const bonusRP = bd => bd ? ((bd.energizedAchieved?1:0)+(bd.superchargedAchieved?1:0)+(bd.traversalAchieved?1:0)) : 0;
+        const redRP  = m.redBreakdown?.rp  ?? ((redWon  ? 3 : tie ? 1 : 0) + bonusRP(m.redBreakdown));
+        const blueRP = m.blueBreakdown?.rp ?? ((blueWon ? 3 : tie ? 1 : 0) + bonusRP(m.blueBreakdown));
+        for (const team of (m.red  || [])) {
+            if (!rpMap[team]) rpMap[team] = { rp:0, wins:0, ties:0, losses:0 };
+            rpMap[team].rp += redRP;
+            if (redWon) rpMap[team].wins++; else if (tie) rpMap[team].ties++; else rpMap[team].losses++;
+        }
+        for (const team of (m.blue || [])) {
+            if (!rpMap[team]) rpMap[team] = { rp:0, wins:0, ties:0, losses:0 };
+            rpMap[team].rp += blueRP;
+            if (blueWon) rpMap[team].wins++; else if (tie) rpMap[team].ties++; else rpMap[team].losses++;
+        }
+    }
+
+    // Build rows
+    let rows = allTeams.map(team => {
+        const tn       = parseInt(team.teamNumber);
+        const tba      = tbaTeamMap[tn];
+        const rp       = rpMap[String(tn)] || { rp:0, wins:0, ties:0, losses:0 };
+        const opr      = effOPR(tba);
+        const analysis = team.analysis || {};
+        const hasCeil  = analysis.ceiling != null && analysis.ceiling !== '—';
+        const epaVal   = hasCeil ? parseFloat(analysis.ceiling) : (team.currentEPA || 0);
+        const hasLOO   = tba?.ignoredMatchKey && tba.adjustedOPR != null && !globalIgnored.has(tba.ignoredMatchKey);
+        const hasAdj   = !hasLOO && globalOPRMap != null;
+        return { team, rp, opr, epaVal, hasCeil, hasLOO, hasAdj };
+    });
+
+    // Composite + tier (mirrors renderAtAGlance)
+    {
+        const pctRank = (arr, val) => {
+            const sorted = [...arr].sort((a, b) => b - a);
+            const idx = sorted.findIndex(v => v <= val + 0.001);
+            return idx < 0 ? 1 : idx / (sorted.length || 1);
+        };
+        const epaVals = rows.map(r => r.epaVal);
+        const oprVals = rows.map(r => r.opr ?? 0);
+        const hasAnyOPR = rows.some(r => r.opr != null);
+        const composite = r => {
+            const ep = pctRank(epaVals, r.epaVal);
+            return hasAnyOPR ? (ep + pctRank(oprVals, r.opr ?? 0)) / 2 : ep;
+        };
+        rows.forEach(r => { r.composite = composite(r); });
+        const tierOrder = [...rows].sort((a, b) => a.composite - b.composite);
+        const tierMap   = new Map(tierOrder.map((r, i) => [
+            r.team.teamNumber, i < 8 ? 'S' : i < 20 ? 'A' : i < 32 ? 'B' : 'C'
+        ]));
+        rows.forEach(r => { r.tier = tierMap.get(r.team.teamNumber); });
+    }
+
+    // Apply saved order; append any new teams at end sorted by composite
+    const SEPARATOR   = Object.freeze({ separator: true });
+    const savedOrder  = loadPickOrder();
+    if (savedOrder.length) {
+        const rowMap = new Map(rows.map(r => [String(r.team.teamNumber), r]));
+        const orderedWithSep = [];
+        let hasSep = false;
+        for (const tn of savedOrder) {
+            if (tn === '---separator---') { orderedWithSep.push(SEPARATOR); hasSep = true; }
+            else { const r = rowMap.get(tn); if (r) { orderedWithSep.push(r); rowMap.delete(tn); } }
+        }
+        const rest = [...rowMap.values()].sort((a, b) => a.composite - b.composite);
+        rows = [...orderedWithSep, ...rest];
+        if (!hasSep) rows.unshift(SEPARATOR);
+    } else {
+        rows.sort((a, b) => a.composite - b.composite);
+        rows.unshift(SEPARATOR);
+    }
+
+    const hasOPR = allTBATeams.length > 0;
+    const hasRP  = playedMatches.length > 0;
+
+    // RP rank (1 = most RP) for top-10 badge
+    const rpRankMap = {};
+    if (hasRP) {
+        Object.entries(rpMap)
+            .sort(([, a], [, b]) => b.rp - a.rp)
+            .forEach(([tn, ], i) => { rpRankMap[tn] = i + 1; });
+    }
+
+    const TIER   = {
+        S: { color:'#f59e0b', bg:'rgba(245,158,11,0.08)'  },
+        A: { color:'#4ade80', bg:'rgba(74,222,128,0.07)'  },
+        B: { color:'#60a5fa', bg:'rgba(96,165,250,0.06)'  },
+        C: { color:'#64748b', bg:'rgba(100,116,139,0.03)' },
+    };
+
+    table.style.display = 'table';
+    let pickPos = 1;
+    tbody.innerHTML = rows.map(r => {
+        if (r.separator) {
+            return `<tr data-separator="true" style="user-select:none;">
+                <td colspan="7" class="drag-handle"
+                    style="padding:9px 20px;border-top:2px dashed #334155;border-bottom:2px dashed #334155;background:#080d16;text-align:center;cursor:grab;touch-action:none;color:#475569;font-size:0.8rem;font-weight:700;letter-spacing:0.06em;">
+                    ⠿ &nbsp; drag to reposition &nbsp;·&nbsp; unranked below &nbsp; ⠿
+                </td>
+            </tr>`;
+        }
+        const rowPos = pickPos++;
+        const { team, rp, opr, epaVal, hasCeil, hasLOO, hasAdj } = r;
+        const ts       = TIER[r.tier];
+        const record   = hasRP ? `${rp.wins}–${rp.ties}–${rp.losses}` : null;
+        const compStr  = ((1 - r.composite) * 100).toFixed(1);
+        const ceilBadge = hasCeil ? `<span style="color:#4ade80;font-size:0.65em;font-weight:600;margin-left:3px;">CEIL</span>` : '';
+        const oprBadge  = hasLOO
+            ? `<span style="color:#fbbf24;font-size:0.65em;font-weight:600;margin-left:3px;">LOO</span>`
+            : hasAdj ? `<span style="color:#f97316;font-size:0.65em;font-weight:600;margin-left:3px;">ADJ</span>` : '';
+        const td = (content, center = true) =>
+            `<td style="padding:13px 10px;border-bottom:1px solid #1e293b;${center?' text-align:center;':''}">${content}</td>`;
+
+        return `<tr data-team="${team.teamNumber}" style="background:${ts.bg};">
+            <td class="drag-handle" style="padding:13px 10px;border-bottom:1px solid #1e293b;text-align:center;box-shadow:inset 3px 0 0 ${ts.color};">
+                <div style="display:flex;flex-direction:column;align-items:center;gap:2px;">
+                    <span style="color:${ts.color};font-size:0.75em;font-weight:800;letter-spacing:0.08em;">${r.tier}</span>
+                    <span class="pick-pos" style="color:#64748b;font-weight:700;">${rowPos}</span>
+                    <span style="color:#475569;font-size:1.2em;line-height:1;">⠿</span>
+                </div>
+            </td>
+            <td style="padding:13px 10px;border-bottom:1px solid #1e293b;cursor:pointer;" onclick="viewTeamDetail(${team.teamNumber})">
+                <strong style="color:#f8fafc;">${team.teamNumber}</strong>
+                <span style="color:#94a3b8;font-size:0.9em;font-weight:600;margin-left:6px;">${team.teamName || ''}</span>
+                ${record ? `<div style="color:#94a3b8;font-size:0.85em;font-weight:600;margin-top:3px;">${record}</div>` : ''}
+            </td>
+            ${td(`<strong style="color:${ts.color};">${compStr}</strong>`)}
+            ${(() => {
+                const rpRank = rpRankMap[String(team.teamNumber)];
+                const rankBadge = rpRank != null && rpRank <= 10
+                    ? `<div style="color:#94a3b8;font-size:0.72em;font-weight:700;margin-top:2px;">#${rpRank} RP</div>` : '';
+                return td(`<strong>${hasRP ? rp.rp : '—'}</strong>${rankBadge}`);
+            })()}
+            ${td(`<strong>${epaVal.toFixed(1)}</strong>${ceilBadge}`)}
+            ${td(hasOPR ? `<strong>${opr != null ? opr.toFixed(1) : '—'}</strong>${oprBadge}` : '—')}
+            <td style="padding:13px 10px;border-bottom:1px solid #1e293b;text-align:center;">
+                <button onclick="dnpTeam('${team.teamNumber}')"
+                    style="background:#1e293b;color:#ef4444;border:1px solid #ef4444;border-radius:6px;padding:5px 10px;font-size:0.8rem;font-weight:700;cursor:pointer;white-space:nowrap;">
+                    DNP
+                </button>
+            </td>
+        </tr>`;
+    }).join('');
+
+    enablePickListDrag(tbody);
+}
+
+function enablePickListDrag(tbody) {
+    tbody.addEventListener('pointerdown', e => {
+        if (!e.target.closest('.drag-handle')) return;
+        e.preventDefault();
+
+        const dragRow = e.target.closest('tr');
+        const rect    = dragRow.getBoundingClientRect();
+        const offsetY = e.clientY - rect.top;
+
+        // Ghost: wrap in a table so <tr> renders correctly outside its parent
+        const ghostTable = document.createElement('table');
+        Object.assign(ghostTable.style, {
+            position: 'fixed', left: rect.left + 'px', top: rect.top + 'px',
+            width: rect.width + 'px', zIndex: '9999', opacity: '0.92',
+            pointerEvents: 'none', borderCollapse: 'collapse',
+            boxShadow: '0 6px 24px rgba(0,0,0,0.5)', borderRadius: '4px',
+            fontFamily: 'inherit', fontSize: 'inherit',
+        });
+        const ghostBody = document.createElement('tbody');
+        ghostBody.appendChild(dragRow.cloneNode(true));
+        ghostTable.appendChild(ghostBody);
+        document.body.appendChild(ghostTable);
+        dragRow.style.opacity = '0.25';
+        document.body.style.cursor = 'grabbing';
+
+        function getTarget(cx, cy) {
+            ghostTable.style.visibility = 'hidden';
+            const el = document.elementFromPoint(cx, cy);
+            ghostTable.style.visibility = '';
+            return el?.closest('#pickListBody tr') || null;
+        }
+        function clearIndicators() {
+            tbody.querySelectorAll('.pick-drop-before, .pick-drop-after').forEach(r => {
+                r.classList.remove('pick-drop-before', 'pick-drop-after');
+            });
+        }
+
+        function onMove(e) {
+            e.preventDefault();
+            ghostTable.style.top = (e.clientY - offsetY) + 'px';
+            const target = getTarget(e.clientX, e.clientY);
+            clearIndicators();
+            if (target && target !== dragRow) {
+                const mid = target.getBoundingClientRect();
+                target.classList.add(e.clientY < mid.top + mid.height / 2 ? 'pick-drop-before' : 'pick-drop-after');
+            }
+        }
+
+        function finish(e) {
+            ghostTable.remove();
+            dragRow.style.opacity = '';
+            document.body.style.cursor = '';
+            const target = getTarget(e.clientX, e.clientY);
+            clearIndicators();
+            if (target && target !== dragRow) {
+                const mid = target.getBoundingClientRect();
+                if (e.clientY < mid.top + mid.height / 2) tbody.insertBefore(dragRow, target);
+                else target.after(dragRow);
+            }
+            refreshPickPositions();
+            savePickOrder();
+            document.removeEventListener('pointermove', onMove);
+            document.removeEventListener('pointerup',   finish);
+            document.removeEventListener('pointercancel', cancel);
+        }
+
+        function cancel() {
+            ghostTable.remove();
+            dragRow.style.opacity = '';
+            document.body.style.cursor = '';
+            clearIndicators();
+            document.removeEventListener('pointermove', onMove);
+            document.removeEventListener('pointerup',   finish);
+            document.removeEventListener('pointercancel', cancel);
+        }
+
+        document.addEventListener('pointermove',   onMove);
+        document.addEventListener('pointerup',     finish);
+        document.addEventListener('pointercancel', cancel);
+    });
+}
 
 window.updateDetailBackButton = function () {
     const btn = document.getElementById('detailBackBtn');
@@ -1125,8 +2351,348 @@ window.goBack = function () {
 
 
 let performanceChart = null;
-// Add this near your other global variables like performanceChart
 let activeTeamNumber = null;
+let activeTeamData = null;
+let activeTBAData = null;
+
+const PHOTO_STYLE = 'width:220px; min-width:220px; height:auto; max-height:320px; object-fit:contain; border-radius:8px; border:1px solid #334155; background:#0f172a; display:block;';
+
+async function renderOverview(team, tbaTeam) {
+    const el = document.getElementById('overviewContent');
+    if (!el) return;
+
+    const fmt = (v, d = 1) => (v != null && v !== '—') ? parseFloat(v).toFixed(d) : '—';
+    const analysis = team.analysis || {};
+    const ceilStr = fmt(analysis.ceiling);
+    const lb = analysis.lowerBound, ub = analysis.upperBound;
+    const ciStr = (lb != null && lb !== '—' && ub != null && ub !== '—') ? `${lb} – ${ub}` : null;
+
+    const card = (label, value, color = '#f1f5f9', sub = null) => `
+        <div style="background:#1e293b; padding:16px; border-radius:8px; border:1px solid #334155;">
+            <div style="color:#64748b; font-size:0.72em; font-weight:600; text-transform:uppercase; letter-spacing:0.05em; margin-bottom:6px;">${label}</div>
+            <div style="font-size:1.55em; font-weight:800; color:${color}; line-height:1.1;">${value}</div>
+            ${sub ? `<div style="color:#64748b; font-size:0.78em; margin-top:4px;">${sub}</div>` : ''}
+        </div>`;
+
+    // Compute effective OPR (mirrors displayTBATeams logic)
+    let effOPRVal = tbaTeam?.opr ?? null;
+    let oprLabel = 'OPR';
+    if (tbaTeam) {
+        const allMatches = await db.matches.toArray();
+        const globalIgnored = new Set(allMatches.filter(m => m.globallyIgnored).map(m => m.key));
+        if (tbaTeam.ignoredMatchKey && tbaTeam.adjustedOPR != null && !globalIgnored.has(tbaTeam.ignoredMatchKey)) {
+            effOPRVal = tbaTeam.adjustedOPR;
+            oprLabel = 'OPR <span style="color:#fbbf24; font-size:0.55em; font-weight:600; vertical-align:middle; margin-left:2px;">LOO</span>';
+        } else if (globalIgnored.size > 0) {
+            const allTBATeams = await db.tbaTeams.toArray();
+            const teamNums = allTBATeams.map(t => t.teamNumber);
+            const activePlayed = allMatches.filter(m =>
+                (m.redScore ?? -1) >= 0 && (m.blueScore ?? -1) >= 0 && !globalIgnored.has(m.key)
+            );
+            const recomputed = computeLocalOPR(activePlayed, teamNums);
+            if (recomputed) {
+                const idx = teamNums.indexOf(parseInt(team.teamNumber));
+                if (idx >= 0) effOPRVal = recomputed[idx];
+                oprLabel = 'OPR <span style="color:#f97316; font-size:0.55em; font-weight:600; vertical-align:middle; margin-left:2px;">ADJ</span>';
+            }
+        }
+    }
+
+    const photoId = `ov-photo-${team.teamNumber}`;
+    const photoHtml = team.photoUrl
+        ? `<img id="${photoId}" src="${team.photoUrl}" alt="Team ${team.teamNumber}"
+               style="${PHOTO_STYLE} cursor:zoom-in; flex-shrink:0;"
+               onclick="openLightbox('${team.photoUrl}')"
+               onerror="this.style.display='none'">`
+        : `<div id="${photoId}" style="width:220px; min-width:220px; height:220px; border-radius:8px; border:1px solid #334155; background:#1e293b; display:flex; align-items:center; justify-content:center; color:#334155; font-size:2.5em; font-weight:800; flex-shrink:0;">${team.teamNumber}</div>`;
+
+    const sectionLabel = text =>
+        `<div style="color:#64748b; font-size:0.72em; font-weight:600; text-transform:uppercase; letter-spacing:0.05em; margin:20px 0 8px;">${text}</div>`;
+
+    const placeholder = text =>
+        `<div style="background:#1e293b; padding:20px; border-radius:8px; border:1px dashed #334155;">
+            <p style="color:#475569; font-style:italic; margin:0; font-size:0.9em;">${text}</p>
+        </div>`;
+
+    const hasTBA     = !!tbaTeam;
+    const hasCompOPR = hasTBA && tbaTeam.autoOPR != null;
+    const ccwmColor  = hasTBA && tbaTeam.ccwm != null ? (tbaTeam.ccwm >= 0 ? '#4ade80' : '#f87171') : '#f1f5f9';
+
+    el.innerHTML = `
+        <div style="display:flex; gap:24px; align-items:flex-start; flex-wrap:wrap; margin-bottom:24px;">
+            ${photoHtml}
+            <div style="flex:1; min-width:180px;">
+                <div style="font-size:1.8em; font-weight:800; color:#f8fafc; line-height:1.15;">${team.teamName || `Team ${team.teamNumber}`}</div>
+                <div style="color:#64748b; font-size:1.05em; margin-top:4px;">Team #${team.teamNumber}</div>
+                <div style="display:flex; gap:16px; margin-top:14px; flex-wrap:wrap;">
+                    <a href="https://www.thebluealliance.com/team/${team.teamNumber}/2026" target="_blank"
+                        style="color:#3b82f6; text-decoration:none; font-size:0.9em;">View on TBA ↗</a>
+                    <a href="https://www.statbotics.io/team/${team.teamNumber}/2026" target="_blank"
+                        style="color:#3b82f6; text-decoration:none; font-size:0.9em;">View on Statbotics ↗</a>
+                </div>
+            </div>
+        </div>
+
+        ${sectionLabel('Statbotics EPA')}
+        <div style="display:grid; grid-template-columns:repeat(auto-fit,minmax(110px,1fr)); gap:12px;">
+            ${card('Total EPA', fmt(team.currentEPA))}
+            ${card('Auto',      fmt(team.autoEPA))}
+            ${card('Teleop',    fmt(team.teleopEPA))}
+            ${card('Endgame',   fmt(team.endgameEPA))}
+            ${card('Ceiling',   ceilStr, '#4ade80', ciStr ? `90%: ${ciStr}` : null)}
+        </div>
+
+        ${sectionLabel('TBA OPR')}
+        <div style="display:grid; grid-template-columns:repeat(auto-fit,minmax(110px,1fr)); gap:12px;">
+            ${card(oprLabel,    effOPRVal != null ? fmt(effOPRVal) : '—')}
+            ${card('DPR',       hasTBA ? fmt(tbaTeam.dpr)  : '—')}
+            ${card('CCWM',      hasTBA ? fmt(tbaTeam.ccwm) : '—', ccwmColor)}
+            ${hasCompOPR ? card('Auto OPR',    fmt(tbaTeam.autoOPR))    : ''}
+            ${hasCompOPR ? card('Teleop OPR',  fmt(tbaTeam.teleopOPR))  : ''}
+            ${hasCompOPR ? card('Endgame OPR', fmt(tbaTeam.endgameOPR)) : ''}
+        </div>
+
+        ${sectionLabel('Pit Scouting')}
+        ${placeholder('No pit data recorded yet.')}
+
+        ${sectionLabel('Match Scouting')}
+        ${placeholder('No match observations recorded yet.')}
+    `;
+
+    if (!team.photoUrl) fetchAndCacheTeamPhoto(team.teamNumber, photoId);
+}
+
+async function fetchAndCacheTeamPhoto(teamNumber, photoElId) {
+    try {
+        const media = await fetchTBA(`/team/frc${teamNumber}/media/2026`);
+        if (!media || !media.length) return;
+        const candidates = media.filter(m => m.direct_url);
+        if (!candidates.length) return;
+        const pick = candidates.find(m => m.preferred) || candidates[0];
+        const url = pick.direct_url;
+
+        // Download and convert to base64 so the photo is available offline
+        let dataUrl = url;
+        try {
+            const resp = await fetch(url);
+            const blob = await resp.blob();
+            dataUrl = await new Promise((resolve, reject) => {
+                const reader = new FileReader();
+                reader.onload  = () => resolve(reader.result);
+                reader.onerror = reject;
+                reader.readAsDataURL(blob);
+            });
+        } catch (_) { /* keep external URL as fallback if download fails */ }
+
+        const el = document.getElementById(photoElId);
+        if (el) {
+            const img = document.createElement('img');
+            img.id = photoElId;
+            img.src = dataUrl;
+            img.alt = `Team ${teamNumber}`;
+            img.style.cssText = PHOTO_STYLE + ' cursor:zoom-in; flex-shrink:0;';
+            img.onclick = () => window.openLightbox(dataUrl);
+            img.onerror = () => img.style.display = 'none';
+            el.replaceWith(img);
+        }
+        await db.teams.update(parseInt(teamNumber), { photoUrl: dataUrl });
+    } catch (_) { }
+}
+
+window.switchDetailTab = async function (tab) {
+    const tabs = ['overview', 'epa-opr', 'scouting', 'pit-data'];
+    tabs.forEach(t => {
+        document.getElementById(`tab-${t}`).style.display = t === tab ? 'block' : 'none';
+    });
+    document.querySelectorAll('.detail-tab-btn').forEach((btn, i) => {
+        btn.classList.toggle('active', tabs[i] === tab);
+    });
+    if (tab === 'overview' && activeTeamData) {
+        await renderOverview(activeTeamData, activeTBAData);
+    }
+    if (tab === 'epa-opr' && activeTeamData) {
+        renderChart(activeTeamData);
+        await renderTBADetail(activeTeamData.teamNumber, activeTBAData);
+    }
+};
+
+async function renderTBADetail(teamNumber, tbaTeam) {
+    const teamNumStr = teamNumber.toString();
+    const oprSection = document.getElementById('tbaDetailStats');
+    const tableSection = document.getElementById('matchContributionTable');
+
+    if (!tbaTeam) {
+        oprSection.innerHTML = '<p style="color:#64748b; font-style:italic; font-size:0.9em; margin:0;">Run "Sync TBA OPR" to see OPR data.</p>';
+        tableSection.innerHTML = '';
+        return;
+    }
+
+    const allTBATeams   = await db.tbaTeams.toArray();
+    const allMatches    = await db.matches.toArray();
+    const allTeamNums   = allTBATeams.map(t => t.teamNumber);
+    const oprByTeam     = Object.fromEntries(allTBATeams.map(t => [t.teamNumber.toString(), t]));
+    const globalIgnored = new Set(allMatches.filter(m => m.globallyIgnored).map(m => m.key));
+    // Base OPR computation excludes globally ignored matches so LOO deltas are self-consistent.
+    const playedMatches = allMatches.filter(m =>
+        (m.redScore ?? -1) >= 0 &&
+        (m.blueScore ?? -1) >= 0 &&
+        !globalIgnored.has(m.key)
+    );
+
+    const teamMatches = allMatches
+        .filter(m =>
+            (m.red  || []).map(String).includes(teamNumStr) ||
+            (m.blue || []).map(String).includes(teamNumStr))
+        .sort((a, b) => a.matchNumber - b.matchNumber);
+
+    // OPR profile stat grid
+    const effectiveOPR = tbaTeam.ignoredMatchKey && tbaTeam.adjustedOPR != null
+        ? tbaTeam.adjustedOPR : tbaTeam.opr;
+    oprSection.innerHTML = `
+        <div style="display:grid; grid-template-columns:repeat(3,1fr); gap:12px; margin-top:12px;">
+            <div style="background:#1a1a1a; padding:12px; border-radius:6px;">
+                <div class="stat-label">OPR</div>
+                <div class="stat-value">${effectiveOPR.toFixed(1)}${tbaTeam.ignoredMatchKey ? '&thinsp;<span style="color:#fbbf24; font-size:0.65em; font-weight:600;">LOO</span>' : ''}</div>
+            </div>
+            <div style="background:#1a1a1a; padding:12px; border-radius:6px;">
+                <div class="stat-label">DPR</div>
+                <div class="stat-value">${tbaTeam.dpr.toFixed(1)}</div>
+            </div>
+            <div style="background:#1a1a1a; padding:12px; border-radius:6px;">
+                <div class="stat-label">CCWM</div>
+                <div class="stat-value" style="color:${tbaTeam.ccwm >= 0 ? '#4ade80' : '#f87171'}">${tbaTeam.ccwm.toFixed(1)}</div>
+            </div>
+            <div style="background:#1a1a1a; padding:12px; border-radius:6px;">
+                <div class="stat-label">Auto OPR</div>
+                <div class="stat-value">${tbaTeam.autoOPR != null ? tbaTeam.autoOPR.toFixed(1) : '—'}</div>
+            </div>
+            <div style="background:#1a1a1a; padding:12px; border-radius:6px;">
+                <div class="stat-label">Teleop OPR</div>
+                <div class="stat-value">${tbaTeam.teleopOPR != null ? tbaTeam.teleopOPR.toFixed(1) : '—'}</div>
+            </div>
+            <div style="background:#1a1a1a; padding:12px; border-radius:6px;">
+                <div class="stat-label">Endgame OPR</div>
+                <div class="stat-value">${tbaTeam.endgameOPR != null ? tbaTeam.endgameOPR.toFixed(1) : '—'}</div>
+            </div>
+        </div>`;
+
+    // Adjustment banner — only when the individually ignored match isn't also globally ignored
+    if (tbaTeam.ignoredMatchKey && !globalIgnored.has(tbaTeam.ignoredMatchKey)) {
+        const ignoredMatch = teamMatches.find(m => m.key === tbaTeam.ignoredMatchKey);
+        const label = ignoredMatch ? `Q${ignoredMatch.matchNumber}` : tbaTeam.ignoredMatchKey;
+        oprSection.innerHTML += `
+            <div style="margin-top:10px; padding:10px 14px; background:#1a1a1a; border-radius:6px; border-left:3px solid #fbbf24; display:flex; align-items:center; gap:12px; flex-wrap:wrap;">
+                <span style="color:#fbbf24; font-size:0.85em;">Ignoring <strong>${label}</strong> — LOO OPR: <strong>${tbaTeam.adjustedOPR.toFixed(1)}</strong> (was ${tbaTeam.opr.toFixed(1)})</span>
+                <button onclick="setIgnoredMatch(${teamNumber}, null, null)"
+                        style="padding:3px 10px; font-size:0.8em; background:#7f1d1d; border:1px solid #ef4444; border-radius:4px; cursor:pointer; color:#fff;">
+                    Clear
+                </button>
+            </div>`;
+    }
+
+    if (teamMatches.length === 0) {
+        tableSection.innerHTML = '<p style="color:#64748b; font-style:italic; font-size:0.9em; margin:0;">Run "Sync Schedule" to see match history.</p>';
+        return;
+    }
+
+    // Compute base OPR locally so LOO deltas are self-consistent regardless of TBA's exact algorithm.
+    const teamIdx  = allTeamNums.findIndex(n => n.toString() === teamNumStr);
+    const baseOPRs = teamIdx !== -1 ? computeLocalOPR(playedMatches, allTeamNums) : null;
+    const baseOPR  = baseOPRs ? baseOPRs[teamIdx] : null;
+
+    const rows = teamMatches.map(m => {
+        const isRed             = (m.red || []).map(String).includes(teamNumStr);
+        const alliance          = isRed ? (m.red || []) : (m.blue || []);
+        const score             = isRed ? m.redScore : m.blueScore;
+        const played            = (score ?? -1) >= 0;
+        const isGloballyIgnored = globalIgnored.has(m.key);
+        // Only compute OPR columns for matches that are part of the active base.
+        const predicted = !isGloballyIgnored
+            ? alliance.reduce((s, t) => s + (oprByTeam[String(t)]?.opr || 0), 0)
+            : null;
+        const residual  = played && !isGloballyIgnored ? score - predicted : null;
+
+        let looOPR = null, impact = null;
+        if (played && !isGloballyIgnored && baseOPR != null) {
+            const looResult = computeLocalOPR(playedMatches.filter(pm => pm.key !== m.key), allTeamNums);
+            if (looResult) {
+                looOPR = looResult[teamIdx];
+                impact = baseOPR - looOPR;
+            }
+        }
+        return { m, isRed, score, played, isGloballyIgnored, predicted, residual, looOPR, impact };
+    });
+
+    const fmtSigned = v => v != null ? (v >= 0 ? '+' : '') + v.toFixed(1) : '—';
+    const resColor  = v => v == null ? 'inherit' : v >= 0 ? '#4ade80' : '#f87171';
+
+    tableSection.innerHTML = `
+        <table class="breakdown-table" style="margin-top:0;">
+            <thead><tr>
+                <th style="text-align:left;">Match</th>
+                <th>Alliance</th>
+                <th>Score</th>
+                <th>OPR Pred.</th>
+                <th>Residual</th>
+                <th>OPR w/o</th>
+                <th>OPR Impact</th>
+                <th></th>
+            </tr></thead>
+            <tbody>
+                ${rows.map(r => {
+                    const isGlobal      = r.isGloballyIgnored;
+                    const isIndivIgnored = !isGlobal && tbaTeam.ignoredMatchKey === r.m.key;
+                    const rowStyle = isGlobal
+                        ? 'cursor:pointer; opacity:0.4;'
+                        : isIndivIgnored
+                        ? 'cursor:pointer; background:rgba(251,191,36,0.06);'
+                        : 'cursor:pointer;';
+                    const matchLabel = isGlobal
+                        ? `Q${r.m.matchNumber} <span style="color:#f59e0b; font-size:0.7em; font-weight:600;">GLOBAL</span>`
+                        : `Q${r.m.matchNumber}`;
+
+                    let ignoreBtn = '';
+                    if (isGlobal) {
+                        ignoreBtn = `<button onclick="event.stopPropagation();setGloballyIgnored('${r.m.key}',false)"
+                            style="padding:3px 10px; font-size:0.8em; background:#92400e; border:1px solid #d97706; color:#fde68a; border-radius:4px; cursor:pointer; white-space:nowrap;">
+                            Restore Global</button>`;
+                    } else if (r.played && r.looOPR != null) {
+                        const ignoreArgs = isIndivIgnored
+                            ? `${teamNumber}, null, null`
+                            : `${teamNumber}, '${r.m.key}', ${r.looOPR.toFixed(2)}`;
+                        ignoreBtn = `<button onclick="event.stopPropagation();setIgnoredMatch(${ignoreArgs})"
+                            style="padding:3px 10px; font-size:0.8em; background:${isIndivIgnored ? '#92400e' : '#1e293b'}; border:1px solid ${isIndivIgnored ? '#d97706' : '#475569'}; color:${isIndivIgnored ? '#fde68a' : '#94a3b8'}; border-radius:4px; cursor:pointer; white-space:nowrap;">
+                            ${isIndivIgnored ? 'Restore' : 'Ignore'}</button>`;
+                    }
+
+                    return `<tr onclick="viewMatchDetail('${r.m.key}')" style="${rowStyle}">
+                        <td style="text-align:left;">${matchLabel}</td>
+                        <td><span style="color:${r.isRed ? '#ef4444' : '#3b82f6'}; font-weight:bold;">${r.isRed ? 'Red' : 'Blue'}</span></td>
+                        <td>${r.played ? r.score : '—'}</td>
+                        <td>${r.predicted != null ? r.predicted.toFixed(1) : '—'}</td>
+                        <td style="color:${resColor(r.residual)}; font-weight:bold;">${r.played && !isGlobal ? fmtSigned(r.residual) : '—'}</td>
+                        <td style="color:#94a3b8;">${r.looOPR != null ? r.looOPR.toFixed(1) : '—'}</td>
+                        <td style="color:${resColor(r.impact)}; font-weight:bold;">${fmtSigned(r.impact)}</td>
+                        <td>${ignoreBtn}</td>
+                    </tr>`;
+                }).join('')}
+            </tbody>
+        </table>`;
+}
+
+window.setIgnoredMatch = async function (teamNumber, matchKey, looOPR) {
+    const pk = parseInt(teamNumber);
+    const updates = matchKey === null
+        ? { ignoredMatchKey: null, adjustedOPR: null }
+        : { ignoredMatchKey: matchKey, adjustedOPR: looOPR };
+    await db.tbaTeams.update(pk, updates);
+    activeTBAData = await db.tbaTeams.get(pk);
+    await Promise.all([
+        displayTBATeams(),
+        renderTBADetail(teamNumber, activeTBAData),
+        activeTeamData ? renderOverview(activeTeamData, activeTBAData) : Promise.resolve(),
+    ]);
+};
 
 function renderChart(team) {
     const ctx = document.getElementById('performanceChart').getContext('2d');
@@ -1248,8 +2814,10 @@ const bootApp = async () => {
     // This ensures that when you click 'Statbotics' or 'Schedule', 
     // the data is already waiting for you.
     try {
-        await displayTeams();    // Loads Statbotics cache
-        await displaySchedule(); // Loads TBA Schedule cache
+        await displayTeams();        // Loads Statbotics cache
+        await displaySchedule();     // Loads TBA Schedule cache
+        await displayTBATeams();     // Loads TBA OPR cache
+        await renderAtAGlance();     // Loads at-a-glance overview
         console.log("Local cache successfully loaded into UI.");
     } catch (err) {
         console.warn("No cached data found to load yet.");
@@ -1269,6 +2837,10 @@ const homeBtn = document.querySelector('.nav-btn');
 window.switchView('homeView', homeBtn);
 
 document.getElementById('eventKeyInput').value = localStorage.getItem('lastEventKey') || '';
+
+if ('serviceWorker' in navigator) {
+    navigator.serviceWorker.register('/sw.js').catch(() => {});
+}
 
 
 
