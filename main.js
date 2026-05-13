@@ -104,7 +104,7 @@ window.displaySchedule = async function () {
                 <strong>${team}</strong>
             </td>`).join('');
 
-        const redWon  = m.redScore > -1 && m.redScore  > m.blueScore;
+        const redWon = m.redScore > -1 && m.redScore > m.blueScore;
         const blueWon = m.redScore > -1 && m.blueScore > m.redScore;
         const resultCell = (m.redScore > -1)
             ? `<td onclick="viewMatchDetail('${m.key}')" style="cursor:pointer; border-left:2px solid #334155; white-space:nowrap;">
@@ -272,19 +272,19 @@ window.viewMatchDetail = async function (matchKey) {
     const match = await db.matches.get(matchKey);
     if (!match) return;
 
-    const redWon  = match.redScore  > match.blueScore;
+    const redWon = match.redScore > match.blueScore;
     const blueWon = match.blueScore > match.redScore;
 
     document.getElementById('matchDetailLabel').innerText = `Match Details: Qual ${match.matchNumber}`;
 
-    const redScoreEl  = document.getElementById('redTotalScore');
+    const redScoreEl = document.getElementById('redTotalScore');
     const blueScoreEl = document.getElementById('blueTotalScore');
-    redScoreEl.innerText  = match.redScore;
+    redScoreEl.innerText = match.redScore;
     blueScoreEl.innerText = match.blueScore;
-    redScoreEl.style.color  = redWon  ? '#4ade80' : '#f8fafc';
+    redScoreEl.style.color = redWon ? '#4ade80' : '#f8fafc';
     blueScoreEl.style.color = blueWon ? '#4ade80' : '#f8fafc';
 
-    document.getElementById('redMatchTeams').innerHTML  = match.red.map(t  => `<div>${t}</div>`).join('');
+    document.getElementById('redMatchTeams').innerHTML = match.red.map(t => `<div>${t}</div>`).join('');
     document.getElementById('blueMatchTeams').innerHTML = match.blue.map(t => `<div>${t}</div>`).join('');
 
     const breakdownEl = document.getElementById('scoreBreakdown');
@@ -292,28 +292,28 @@ window.viewMatchDetail = async function (matchKey) {
     const bbd = match.blueBreakdown;
 
     if (rbd && bbd) {
-        const redEndgame  = (rbd.hubScore?.endgamePoints || 0) + (rbd.endGameTowerPoints || 0);
+        const redEndgame = (rbd.hubScore?.endgamePoints || 0) + (rbd.endGameTowerPoints || 0);
         const blueEndgame = (bbd.hubScore?.endgamePoints || 0) + (bbd.endGameTowerPoints || 0);
 
         // Match-result RP: 3 win / 1 tie / 0 loss
-        const redResultRP  = redWon  ? 3 : match.redScore  === match.blueScore ? 1 : 0;
-        const blueResultRP = blueWon ? 3 : match.redScore  === match.blueScore ? 1 : 0;
+        const redResultRP = redWon ? 3 : match.redScore === match.blueScore ? 1 : 0;
+        const blueResultRP = blueWon ? 3 : match.redScore === match.blueScore ? 1 : 0;
 
         const bonusFields = [
-            ['Energized RP',    'energizedAchieved'],
+            ['Energized RP', 'energizedAchieved'],
             ['Supercharged RP', 'superchargedAchieved'],
-            ['Traversal RP',    'traversalAchieved'],
+            ['Traversal RP', 'traversalAchieved'],
         ];
         const check = val => val ? `<span style="color:#4ade80;">✓</span>` : `<span style="color:#475569;">✗</span>`;
 
-        const totalRedRP  = rbd.rp ?? (redResultRP  + bonusFields.reduce((s, [, f]) => s + (rbd[f] ? 1 : 0), 0));
+        const totalRedRP = rbd.rp ?? (redResultRP + bonusFields.reduce((s, [, f]) => s + (rbd[f] ? 1 : 0), 0));
         const totalBlueRP = bbd.rp ?? (blueResultRP + bonusFields.reduce((s, [, f]) => s + (bbd[f] ? 1 : 0), 0));
 
         const scoreRows = [
-            ['Auto',         rbd.totalAutoPoints,  bbd.totalAutoPoints],
-            ['Teleop',       rbd.totalTeleopPoints, bbd.totalTeleopPoints],
-            ['Endgame',      redEndgame,            blueEndgame],
-            ['Fouls Earned', rbd.foulPoints,        bbd.foulPoints],
+            ['Auto', rbd.totalAutoPoints, bbd.totalAutoPoints],
+            ['Teleop', rbd.totalTeleopPoints, bbd.totalTeleopPoints],
+            ['Endgame', redEndgame, blueEndgame],
+            ['Fouls Earned', rbd.foulPoints, bbd.foulPoints],
         ];
         const rpRows = [
             ['Match Result', redResultRP, blueResultRP],
@@ -335,7 +335,7 @@ window.viewMatchDetail = async function (matchKey) {
                     </tr>`).join('')}
                     <tr class="breakdown-total">
                         <td>Total</td>
-                        <td style="color:${redWon  ? '#4ade80' : 'inherit'}">${rbd.totalPoints ?? match.redScore}</td>
+                        <td style="color:${redWon ? '#4ade80' : 'inherit'}">${rbd.totalPoints ?? match.redScore}</td>
                         <td style="color:${blueWon ? '#4ade80' : 'inherit'}">${bbd.totalPoints ?? match.blueScore}</td>
                     </tr>
                     <tr><td colspan="3" style="padding:8px 0 4px; color:#64748b; font-size:0.8em; font-weight:600; text-transform:uppercase; letter-spacing:0.05em;">Ranking Points</td></tr>
@@ -568,6 +568,13 @@ async function processTeamPerformance(teamNumber, eventKey, force = false) {
 }
 
 
+function setSyncTimestamp(key) {
+    const str = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    localStorage.setItem(`lastSync_${key}`, str);
+    const el = document.getElementById(`ts-${key}`);
+    if (el) el.textContent = `Last sync: ${str}`;
+}
+
 window.syncProjections = async function () {
     const input = document.getElementById('eventKeyInput');
     const eventKey = input ? input.value.trim().toLowerCase() : "";
@@ -637,6 +644,62 @@ window.syncProjections = async function () {
     displayTeams();
 }
 
+window.syncStatboticsLive = async function () {
+    const eventKey = document.getElementById('eventKeyInput')?.value.trim().toLowerCase();
+    if (!eventKey) { alert('Enter an Event Key first.'); return; }
+
+    const statusDiv = document.getElementById('status');
+    statusDiv.textContent = 'Fetching live Statbotics match data…';
+
+    // One call for all team-matches at the event
+    const resp = await fetch(`https://api.statbotics.io/v3/team_matches?event=${eventKey}&limit=1000`);
+    const json = await resp.json();
+    const eventMatches = json.data || json.results || json;
+
+    if (!Array.isArray(eventMatches) || !eventMatches.length) {
+        statusDiv.textContent = 'No Statbotics match data returned for this event.';
+        return;
+    }
+
+    // Group by team number
+    const byTeam = {};
+    for (const m of eventMatches) {
+        const tn = m.team;
+        if (!byTeam[tn]) byTeam[tn] = [];
+        byTeam[tn].push(m);
+    }
+    for (const tn of Object.keys(byTeam)) {
+        byTeam[tn].sort((a, b) => (a.time || 0) - (b.time || 0));
+    }
+
+    const allTeams = await db.teams.toArray();
+    let updated = 0;
+
+    for (const team of allTeams) {
+        const tn = team.teamNumber;
+        const newMatches = byTeam[tn];
+        if (!newMatches) continue;
+
+        const played = newMatches.filter(m => m.status === 'Completed' && m.epa?.post != null);
+        if (!played.length) continue;
+
+        const latestEPA = played[played.length - 1].epa.post;
+
+        // Merge event matches into existing history (replace same match keys, keep the rest)
+        const eventKeys = new Set(newMatches.map(m => m.match));
+        const baseHistory = (team.rawStatboticsData || []).filter(m => !eventKeys.has(m.match));
+        const merged = [...baseHistory, ...newMatches].sort((a, b) => (a.time || 0) - (b.time || 0));
+
+        await db.teams.update(tn, { currentEPA: latestEPA, rawStatboticsData: merged });
+        updated++;
+    }
+
+    displayTeams();
+    await renderAtAGlance();
+    setSyncTimestamp('statboticsLive');
+    statusDiv.textContent = `✅ Live Statbotics sync complete — ${updated} team${updated !== 1 ? 's' : ''} updated.`;
+};
+
 window.syncSchedule = async function () {
     const eventKey = document.getElementById('eventKeyInput').value.trim().toLowerCase();
     if (!eventKey) return alert("Please enter an Event Key.");
@@ -696,6 +759,63 @@ window.syncAll = async function () {
     statusDiv.innerText = "🎉 All systems up to date!";
 };
 
+// ── Auto-sync ─────────────────────────────────────────────────────────────
+
+let _autoSyncTimer = null;
+let _autoSyncTick = null;
+let _autoSyncCountdown = 0;
+
+async function runDuringEventSyncs() {
+    await window.syncStatboticsLive();
+    await window.syncTBAOPR();
+    await window.syncTBAMatches();
+}
+
+function _updateAutoSyncStatus() {
+    const el = document.getElementById('autoSyncStatus');
+    if (!el) return;
+    const m = Math.floor(_autoSyncCountdown / 60);
+    const s = String(_autoSyncCountdown % 60).padStart(2, '0');
+    el.textContent = `Next sync in ${m}:${s}`;
+}
+
+window.toggleAutoSync = function () {
+    if (_autoSyncTimer) {
+        clearInterval(_autoSyncTimer);
+        clearInterval(_autoSyncTick);
+        _autoSyncTimer = null;
+        _autoSyncTick = null;
+        const btn = document.getElementById('autoSyncBtn');
+        const sel = document.getElementById('autoSyncInterval');
+        if (btn) { btn.textContent = 'Start Auto-Sync'; btn.style.background = '#059669'; }
+        if (sel) sel.disabled = false;
+        const status = document.getElementById('autoSyncStatus');
+        if (status) status.textContent = '';
+    } else {
+        const minutes = parseInt(document.getElementById('autoSyncInterval')?.value || '5', 10);
+        const totalSeconds = minutes * 60;
+        _autoSyncCountdown = totalSeconds;
+
+        runDuringEventSyncs();
+
+        _autoSyncTimer = setInterval(() => {
+            _autoSyncCountdown = totalSeconds;
+            runDuringEventSyncs();
+        }, totalSeconds * 1000);
+
+        _autoSyncTick = setInterval(() => {
+            _autoSyncCountdown = Math.max(0, _autoSyncCountdown - 1);
+            _updateAutoSyncStatus();
+        }, 1000);
+
+        const btn = document.getElementById('autoSyncBtn');
+        const sel = document.getElementById('autoSyncInterval');
+        if (btn) { btn.textContent = 'Stop Auto-Sync'; btn.style.background = '#ef4444'; }
+        if (sel) sel.disabled = true;
+        _updateAutoSyncStatus();
+    }
+};
+
 
 
 
@@ -707,18 +827,29 @@ window.clearCache = async function () {
     }
 
     try {
-        // Clear the teams table in Dexie
         await db.teams.clear();
         await db.tbaTeams.clear();
+        await db.matches.clear();
 
-        // Clear any UI elements
-        const statusDiv = document.getElementById('status');
-        if (statusDiv) statusDiv.innerText = "Cache cleared successfully.";
-
-        // Refresh the table display (which will now be empty)
-        if (typeof displayTeams === 'function') {
-            displayTeams();
+        // Clear persisted sync state
+        localStorage.removeItem('lastEventKey');
+        localStorage.removeItem('pickListOrder');
+        localStorage.removeItem('draftState');
+        for (const key of ['statboticsLive', 'tbaOPR', 'tbaMatches']) {
+            localStorage.removeItem(`lastSync_${key}`);
+            const el = document.getElementById(`ts-${key}`);
+            if (el) el.textContent = '';
         }
+
+        // Clear the event key input
+        const input = document.getElementById('eventKeyInput');
+        if (input) input.value = '';
+
+        const statusDiv = document.getElementById('status');
+        if (statusDiv) statusDiv.innerText = 'Cache cleared.';
+
+        displayTeams();
+        displaySchedule();
 
         console.log("Database cache cleared.");
     } catch (err) {
@@ -960,30 +1091,57 @@ function renderTeamChart(sortedTeams) {
                 {
                     label: 'Auto',
                     data: sortedTeams.map(t => t.autoEPA || 0),
-                    backgroundColor: '#fbbf24', // Amber
-                    stack: 'EPA'
+                    backgroundColor: '#fbbf24',
+                    stack: 'EPA',
+                    order: 10,
                 },
                 {
                     label: 'Teleop',
                     data: sortedTeams.map(t => t.teleopEPA || 0),
-                    backgroundColor: '#3b82f6', // Blue
-                    stack: 'EPA'
+                    backgroundColor: '#3b82f6',
+                    stack: 'EPA',
+                    order: 10,
                 },
                 {
                     label: 'Endgame',
                     data: sortedTeams.map(t => t.endgameEPA || 0),
-                    backgroundColor: '#10b981', // Green
-                    stack: 'EPA'
+                    backgroundColor: '#10b981',
+                    stack: 'EPA',
+                    order: 10,
                 },
                 {
                     type: 'scatter',
+                    label: 'EPA',
+                    data: sortedTeams.map(t => t.currentEPA || 0),
+                    backgroundColor: sortedTeams.map(t => {
+                        const c = t.analysis?.ceiling;
+                        return (c != null && c !== '—' && c !== 'N/A') ? 'rgba(0,0,0,0)' : '#ffffff';
+                    }),
+                    borderColor: '#ffffff',
+                    borderWidth: 2,
+                    pointStyle: 'circle',
+                    pointRadius: 5,
+                    pointHoverRadius: 7,
+                    order: 1,
+                },
+                {
+                    type: 'line',
                     label: 'Ceiling',
-                    data: sortedTeams.map(t => t.analysis?.ceiling || t.currentEPA || 0),
-                    backgroundColor: '#f43f5e', // Rose/Pink
+                    data: sortedTeams.map(t => {
+                        const c = t.analysis?.ceiling;
+                        return (c != null && c !== '—' && c !== 'N/A') ? parseFloat(c) : null;
+                    }),
+                    borderColor: '#4ade80',
+                    borderDash: [5, 5],
+                    borderWidth: 1.5,
+                    pointBackgroundColor: '#ffffff',
+                    pointBorderColor: '#ffffff',
                     pointStyle: 'circle',
                     pointRadius: 6,
                     pointHoverRadius: 8,
-                    z: 10 // Ensure dots are on top
+                    spanGaps: false,
+                    fill: false,
+                    order: 2,
                 }
             ]
         },
@@ -1164,7 +1322,7 @@ function computeLocalOPR(matches, teamNumbers) {
     for (const m of matches) {
         if ((m.redScore ?? -1) < 0) continue;
         for (const [alliance, score] of [
-            [(m.red  || []).map(String), m.redScore ],
+            [(m.red || []).map(String), m.redScore],
             [(m.blue || []).map(String), m.blueScore]
         ]) {
             const row = new Array(n).fill(0);
@@ -1255,12 +1413,12 @@ window.syncTBAOPR = async function () {
         if (coprData && typeof coprData === 'object' && !coprData.Errors) {
             const keys = Object.keys(coprData);
             console.log('[TBA COPRs] Available components:', keys.join(', '));
-            const autoKey   = ['totalAutoPoints',   'autoPoints'].find(k => keys.includes(k));
+            const autoKey = ['totalAutoPoints', 'autoPoints'].find(k => keys.includes(k));
             const teleopKey = ['totalTeleopPoints', 'teleopPoints'].find(k => keys.includes(k));
-            if (autoKey)   autoMap   = coprData[autoKey];
+            if (autoKey) autoMap = coprData[autoKey];
             if (teleopKey) teleopMap = coprData[teleopKey];
             // Endgame = tower climbing + fuel scored during the endgame window
-            const towerMap      = coprData['endGameTowerPoints']    || null;
+            const towerMap = coprData['endGameTowerPoints'] || null;
             const endgameFuelMap = coprData['Hub Endgame Fuel Count'] || null;
             if (towerMap || endgameFuelMap) {
                 const allKeys = Object.keys(towerMap || endgameFuelMap);
@@ -1272,18 +1430,19 @@ window.syncTBAOPR = async function () {
 
         const teamKeys = Object.keys(oprData.oprs).sort();
         const records = teamKeys.map(key => ({
-            teamNumber:  parseInt(key.replace('frc', '')),
-            teamKey:     key,
+            teamNumber: parseInt(key.replace('frc', '')),
+            teamKey: key,
             eventKey,
-            opr:        +(oprData.oprs[key]  || 0).toFixed(2),
-            dpr:        +(oprData.dprs[key]  || 0).toFixed(2),
-            ccwm:       +(oprData.ccwms[key] || 0).toFixed(2),
-            autoOPR:    autoMap    ? +(autoMap[key]    || 0).toFixed(2) : null,
-            teleopOPR:  teleopMap  ? +(teleopMap[key]  || 0).toFixed(2) : null,
+            opr: +(oprData.oprs[key] || 0).toFixed(2),
+            dpr: +(oprData.dprs[key] || 0).toFixed(2),
+            ccwm: +(oprData.ccwms[key] || 0).toFixed(2),
+            autoOPR: autoMap ? +(autoMap[key] || 0).toFixed(2) : null,
+            teleopOPR: teleopMap ? +(teleopMap[key] || 0).toFixed(2) : null,
             endgameOPR: endgameMap ? +(endgameMap[key] || 0).toFixed(2) : null,
             lastUpdated: Date.now()
         }));
         await db.tbaTeams.bulkPut(records);
+        setSyncTimestamp('tbaOPR');
         statusDiv.innerText = `✅ TBA OPR synced for ${records.length} teams.`;
         await displayTBATeams();
     } catch (err) {
@@ -1306,14 +1465,14 @@ async function recomputeComponentOPRs(matches, eventKey) {
     const fields = Object.keys(sampleBd);
     console.log('[TBA] Score breakdown fields:', fields.join(', '));
 
-    const autoF    = ['autoPoints'].find(f => fields.includes(f));
-    const teleopF  = ['teleopPoints'].find(f => fields.includes(f));
+    const autoF = ['autoPoints'].find(f => fields.includes(f));
+    const teleopF = ['teleopPoints'].find(f => fields.includes(f));
     const endgameF = ['endgamePoints', 'endGamePoints', 'endgameBargePoints', 'endgameTotalStagePoints']
-                       .find(f => fields.includes(f));
+        .find(f => fields.includes(f));
     console.log(`[TBA] Mapping → auto:${autoF} | teleop:${teleopF} | endgame:${endgameF}`);
 
-    const autoOPRs    = autoF    ? computeOPR(matches, teamKeys, bd => bd?.[autoF]    ?? null) : null;
-    const teleopOPRs  = teleopF  ? computeOPR(matches, teamKeys, bd => bd?.[teleopF]  ?? null) : null;
+    const autoOPRs = autoF ? computeOPR(matches, teamKeys, bd => bd?.[autoF] ?? null) : null;
+    const teleopOPRs = teleopF ? computeOPR(matches, teamKeys, bd => bd?.[teleopF] ?? null) : null;
     const endgameOPRs = endgameF ? computeOPR(matches, teamKeys, bd => bd?.[endgameF] ?? null) : null;
 
     const updates = tbaTeams.map(team => {
@@ -1321,8 +1480,8 @@ async function recomputeComponentOPRs(matches, eventKey) {
         if (i === -1) return team;
         return {
             ...team,
-            autoOPR:    autoOPRs    ? +autoOPRs[i].toFixed(2)    : null,
-            teleopOPR:  teleopOPRs  ? +teleopOPRs[i].toFixed(2)  : null,
+            autoOPR: autoOPRs ? +autoOPRs[i].toFixed(2) : null,
+            teleopOPR: teleopOPRs ? +teleopOPRs[i].toFixed(2) : null,
             endgameOPR: endgameOPRs ? +endgameOPRs[i].toFixed(2) : null,
         };
     });
@@ -1343,19 +1502,20 @@ window.syncTBAMatches = async function () {
             .sort((a, b) => a.match_number - b.match_number);
 
         const records = qualMatches.map(m => ({
-            key:          m.key,
+            key: m.key,
             eventKey,
-            matchNumber:  m.match_number,
-            red:          (m.alliances?.red?.team_keys  || []).map(k => k.replace('frc', '')),
-            blue:         (m.alliances?.blue?.team_keys || []).map(k => k.replace('frc', '')),
-            redScore:     m.alliances?.red?.score  ?? -1,
-            blueScore:    m.alliances?.blue?.score ?? -1,
-            redBreakdown:  m.score_breakdown?.red  || null,
+            matchNumber: m.match_number,
+            red: (m.alliances?.red?.team_keys || []).map(k => k.replace('frc', '')),
+            blue: (m.alliances?.blue?.team_keys || []).map(k => k.replace('frc', '')),
+            redScore: m.alliances?.red?.score ?? -1,
+            blueScore: m.alliances?.blue?.score ?? -1,
+            redBreakdown: m.score_breakdown?.red || null,
             blueBreakdown: m.score_breakdown?.blue || null,
             videos: (m.videos || []).filter(v => v.type === 'youtube').map(v => v.key),
         }));
         await db.matches.bulkPut(records);
 
+        setSyncTimestamp('tbaMatches');
         statusDiv.innerText = `✅ TBA Matches synced (${records.length} qual matches).`;
     } catch (err) {
         console.error(err);
@@ -1382,18 +1542,31 @@ window.sortTBABy = function (column) {
     displayTBATeams();
 };
 
-function renderTBAChart(teams) {
+function renderTBAChart(teams, effOPR) {
     const ctx = document.getElementById('tbaComparisonChart').getContext('2d');
     if (tbaChartInstance) tbaChartInstance.destroy();
     const hasComponents = teams.some(t => t.autoOPR != null);
     const labels = teams.map(t => t.teamNumber.toString());
+    const getOPR = effOPR || (t => t.opr || 0);
     const datasets = hasComponents ? [
-        { label: 'Auto OPR',    data: teams.map(t => t.autoOPR    || 0), backgroundColor: '#fbbf24', stack: 'OPR' },
-        { label: 'Teleop OPR',  data: teams.map(t => t.teleopOPR  || 0), backgroundColor: '#3b82f6', stack: 'OPR' },
-        { label: 'Endgame OPR', data: teams.map(t => t.endgameOPR || 0), backgroundColor: '#10b981', stack: 'OPR' }
+        { label: 'Auto OPR', data: teams.map(t => t.autoOPR || 0), backgroundColor: '#fbbf24', stack: 'OPR', order: 10 },
+        { label: 'Teleop OPR', data: teams.map(t => t.teleopOPR || 0), backgroundColor: '#3b82f6', stack: 'OPR', order: 10 },
+        { label: 'Endgame OPR', data: teams.map(t => t.endgameOPR || 0), backgroundColor: '#10b981', stack: 'OPR', order: 10 }
     ] : [
-        { label: 'OPR', data: teams.map(t => t.opr || 0), backgroundColor: '#3b82f6', stack: 'OPR' }
+        { label: 'OPR', data: teams.map(t => t.opr || 0), backgroundColor: '#3b82f6', stack: 'OPR', order: 10 }
     ];
+    datasets.push({
+        type: 'scatter',
+        label: 'OPR',
+        data: teams.map(getOPR),
+        backgroundColor: '#ffffff',
+        borderColor: '#ffffff',
+        borderWidth: 2,
+        pointStyle: 'circle',
+        pointRadius: 5,
+        pointHoverRadius: 7,
+        order: 1,
+    });
     tbaChartInstance = new Chart(ctx, {
         type: 'bar',
         data: { labels, datasets },
@@ -1402,8 +1575,10 @@ function renderTBAChart(teams) {
             maintainAspectRatio: false,
             scales: {
                 x: { stacked: true, grid: { display: false }, ticks: { color: '#94a3b8', font: { size: 10 } } },
-                y: { beginAtZero: true, stacked: true, grid: { color: '#334155' }, ticks: { color: '#94a3b8' },
-                     title: { display: true, text: 'OPR', color: '#94a3b8' } }
+                y: {
+                    beginAtZero: true, stacked: true, grid: { color: '#334155' }, ticks: { color: '#94a3b8' },
+                    title: { display: true, text: 'OPR', color: '#94a3b8' }
+                }
             },
             plugins: {
                 legend: { position: 'top', labels: { color: '#f8fafc', usePointStyle: true } },
@@ -1454,19 +1629,19 @@ window.displayTBATeams = async function () {
     allTeams.sort((a, b) => {
         let valA, valB;
         switch (tbaSortColumn) {
-            case 'teamNumber': valA = a.teamNumber;    valB = b.teamNumber;    break;
-            case 'dpr':        valA = a.dpr    || 0;   valB = b.dpr    || 0;   break;
-            case 'ccwm':       valA = a.ccwm   || 0;   valB = b.ccwm   || 0;   break;
-            case 'autoOPR':    valA = a.autoOPR    ?? 0; valB = b.autoOPR    ?? 0; break;
-            case 'teleopOPR':  valA = a.teleopOPR  ?? 0; valB = b.teleopOPR  ?? 0; break;
+            case 'teamNumber': valA = a.teamNumber; valB = b.teamNumber; break;
+            case 'dpr': valA = a.dpr || 0; valB = b.dpr || 0; break;
+            case 'ccwm': valA = a.ccwm || 0; valB = b.ccwm || 0; break;
+            case 'autoOPR': valA = a.autoOPR ?? 0; valB = b.autoOPR ?? 0; break;
+            case 'teleopOPR': valA = a.teleopOPR ?? 0; valB = b.teleopOPR ?? 0; break;
             case 'endgameOPR': valA = a.endgameOPR ?? 0; valB = b.endgameOPR ?? 0; break;
-            default:           valA = effOPR(a);  valB = effOPR(b);
+            default: valA = effOPR(a); valB = effOPR(b);
         }
         return (parseFloat(valB) - parseFloat(valA)) * tbaSortOrder;
     });
     const oprs = allTeams.map(effOPR);
     const minOPR = Math.min(...oprs), maxOPR = Math.max(...oprs);
-    renderTBAChart(allTeams);
+    renderTBAChart(allTeams, effOPR);
     table.style.display = 'table';
     tableBody.innerHTML = '';
     const hasComponents = allTeams.some(t => t.autoOPR != null);
@@ -1487,8 +1662,8 @@ window.displayTBATeams = async function () {
             <td>${oprCell}</td>
             <td>${team.dpr.toFixed(1)}</td>
             <td style="color:${team.ccwm >= 0 ? '#4ade80' : '#f87171'}">${team.ccwm.toFixed(1)}</td>
-            <td style="color:#aaa;">${hasComponents && team.autoOPR   != null ? team.autoOPR.toFixed(1)   : '—'}</td>
-            <td style="color:#aaa;">${hasComponents && team.teleopOPR  != null ? team.teleopOPR.toFixed(1)  : '—'}</td>
+            <td style="color:#aaa;">${hasComponents && team.autoOPR != null ? team.autoOPR.toFixed(1) : '—'}</td>
+            <td style="color:#aaa;">${hasComponents && team.teleopOPR != null ? team.teleopOPR.toFixed(1) : '—'}</td>
             <td style="color:#aaa;">${hasComponents && team.endgameOPR != null ? team.endgameOPR.toFixed(1) : '—'}</td>
         `;
         tableBody.appendChild(row);
@@ -1499,7 +1674,7 @@ window.displayTBATeams = async function () {
 // ─── HOME: AT A GLANCE ───────────────────────────────────────────────────────
 
 let glanceSortColumn = 'rp';
-let glanceSortOrder  = 1; // 1 = descending
+let glanceSortOrder = 1; // 1 = descending
 
 window.switchHomeTab = function (tab) {
     ['setup', 'overview'].forEach(t => {
@@ -1516,15 +1691,15 @@ window.sortGlanceBy = function (col) {
         glanceSortOrder *= -1;
     } else {
         glanceSortColumn = col;
-        glanceSortOrder  = 1;
+        glanceSortOrder = 1;
     }
     renderAtAGlance();
 };
 
 async function renderAtAGlance() {
     const statusEl = document.getElementById('atAGlanceStatus');
-    const table    = document.getElementById('atAGlanceTable');
-    const tbody    = document.getElementById('atAGlanceBody');
+    const table = document.getElementById('atAGlanceTable');
+    const tbody = document.getElementById('atAGlanceBody');
     if (!statusEl || !table || !tbody) return;
 
     const [allTeams, allTBATeams, allMatches] = await Promise.all([
@@ -1539,11 +1714,11 @@ async function renderAtAGlance() {
 
     // ── Effective OPR (mirrors displayTBATeams) ──────────────────────────────
     const globalIgnored = new Set(allMatches.filter(m => m.globallyIgnored).map(m => m.key));
-    const tbaTeamMap    = Object.fromEntries(allTBATeams.map(t => [t.teamNumber, t]));
+    const tbaTeamMap = Object.fromEntries(allTBATeams.map(t => [t.teamNumber, t]));
 
     let globalOPRMap = null;
     if (globalIgnored.size > 0) {
-        const teamNums   = allTBATeams.map(t => t.teamNumber);
+        const teamNums = allTBATeams.map(t => t.teamNumber);
         const activePlayed = allMatches.filter(m =>
             (m.redScore ?? -1) >= 0 && (m.blueScore ?? -1) >= 0 && !globalIgnored.has(m.key)
         );
@@ -1565,24 +1740,24 @@ async function renderAtAGlance() {
     let hasBreakdown = false;
 
     for (const m of playedMatches) {
-        const redWon  = m.redScore  > m.blueScore;
+        const redWon = m.redScore > m.blueScore;
         const blueWon = m.blueScore > m.redScore;
-        const tie     = m.redScore  === m.blueScore;
+        const tie = m.redScore === m.blueScore;
 
         // Use TBA's pre-computed rankingPoints when available; otherwise compute from
         // match result (3/1/0) + 2026 bonus RPs (Energized, Supercharged, Traversal).
         const bonusRP = bd => bd ? (
-            (bd.energizedAchieved    ? 1 : 0) +
+            (bd.energizedAchieved ? 1 : 0) +
             (bd.superchargedAchieved ? 1 : 0) +
-            (bd.traversalAchieved    ? 1 : 0)
+            (bd.traversalAchieved ? 1 : 0)
         ) : 0;
-        const redRP  = m.redBreakdown?.rp  ?? ((redWon  ? 3 : tie ? 1 : 0) + bonusRP(m.redBreakdown));
+        const redRP = m.redBreakdown?.rp ?? ((redWon ? 3 : tie ? 1 : 0) + bonusRP(m.redBreakdown));
         const blueRP = m.blueBreakdown?.rp ?? ((blueWon ? 3 : tie ? 1 : 0) + bonusRP(m.blueBreakdown));
         if (m.redBreakdown != null) hasBreakdown = true;
 
-        for (const team of (m.red  || [])) {
+        for (const team of (m.red || [])) {
             if (!rpMap[team]) rpMap[team] = { rp: 0, played: 0, wins: 0, ties: 0, losses: 0 };
-            rpMap[team].rp += redRP;  rpMap[team].played++;
+            rpMap[team].rp += redRP; rpMap[team].played++;
             if (redWon) rpMap[team].wins++; else if (tie) rpMap[team].ties++; else rpMap[team].losses++;
         }
         for (const team of (m.blue || [])) {
@@ -1594,20 +1769,20 @@ async function renderAtAGlance() {
 
     // ── Build rows ────────────────────────────────────────────────────────────
     const rows = allTeams.map(team => {
-        const tn      = parseInt(team.teamNumber);
-        const tba     = tbaTeamMap[tn];
-        const rp      = rpMap[String(tn)] || { rp: 0, played: 0, wins: 0, ties: 0, losses: 0 };
-        const opr     = effOPR(tba);
+        const tn = parseInt(team.teamNumber);
+        const tba = tbaTeamMap[tn];
+        const rp = rpMap[String(tn)] || { rp: 0, played: 0, wins: 0, ties: 0, losses: 0 };
+        const opr = effOPR(tba);
         const analysis = team.analysis || {};
-        const hasCeil  = analysis.ceiling != null && analysis.ceiling !== '—';
-        const epaVal   = hasCeil ? parseFloat(analysis.ceiling) : (team.currentEPA || 0);
-        const hasLOO   = tba?.ignoredMatchKey && tba.adjustedOPR != null && !globalIgnored.has(tba.ignoredMatchKey);
-        const hasAdj   = !hasLOO && globalOPRMap != null;
+        const hasCeil = analysis.ceiling != null && analysis.ceiling !== '—';
+        const epaVal = hasCeil ? parseFloat(analysis.ceiling) : (team.currentEPA || 0);
+        const hasLOO = tba?.ignoredMatchKey && tba.adjustedOPR != null && !globalIgnored.has(tba.ignoredMatchKey);
+        const hasAdj = !hasLOO && globalOPRMap != null;
         return { team, tba, rp, opr, epaVal, hasCeil, hasLOO, hasAdj };
     });
 
     const hasOPR = allTBATeams.length > 0;
-    const hasRP  = playedMatches.length > 0;
+    const hasRP = playedMatches.length > 0;
 
     // ── Composite score + tier (must run before sort) ────────────────────────
     // Composite = average of EPA and OPR percentile ranks (0 = best, 1 = worst).
@@ -1639,10 +1814,10 @@ async function renderAtAGlance() {
     rows.sort((a, b) => {
         let va, vb;
         switch (glanceSortColumn) {
-            case 'epa':       va = a.epaVal;       vb = b.epaVal;       break;
-            case 'opr':       va = a.opr ?? -999;  vb = b.opr ?? -999;  break;
-            case 'composite': va = -a.composite;   vb = -b.composite;   break;
-            default:          va = a.rp.rp;        vb = b.rp.rp;        break;
+            case 'epa': va = a.epaVal; vb = b.epaVal; break;
+            case 'opr': va = a.opr ?? -999; vb = b.opr ?? -999; break;
+            case 'composite': va = -a.composite; vb = -b.composite; break;
+            default: va = a.rp.rp; vb = b.rp.rp; break;
         }
         return (vb - va) * glanceSortOrder || (b.epaVal - a.epaVal);
     });
@@ -1650,26 +1825,26 @@ async function renderAtAGlance() {
     // Compute RP-based rank separately so it stays stable regardless of current sort
     const rpRank = Object.fromEntries(
         [...rows].sort((a, b) => b.rp.rp - a.rp.rp || b.epaVal - a.epaVal)
-                 .map((r, i) => [r.team.teamNumber, i + 1])
+            .map((r, i) => [r.team.teamNumber, i + 1])
     );
     const TIER = {
-        S: { color: '#f59e0b', bg: 'rgba(245,158,11,0.08)'  },
-        A: { color: '#4ade80', bg: 'rgba(74,222,128,0.07)'  },
-        B: { color: '#60a5fa', bg: 'rgba(96,165,250,0.06)'  },
+        S: { color: '#f59e0b', bg: 'rgba(245,158,11,0.08)' },
+        A: { color: '#4ade80', bg: 'rgba(74,222,128,0.07)' },
+        B: { color: '#60a5fa', bg: 'rgba(96,165,250,0.06)' },
         C: { color: '#64748b', bg: 'rgba(100,116,139,0.03)' },
     };
 
     table.style.display = 'table';
     tbody.innerHTML = rows.map(r => {
         const { team, rp, opr, epaVal, hasCeil, hasLOO, hasAdj, composite } = r;
-        const rank    = hasRP ? rpRank[team.teamNumber] : '—';
-        const record  = hasRP ? `${rp.wins}–${rp.ties}–${rp.losses}` : null;
-        const rpStr   = hasRP ? rp.rp : '—';
+        const rank = hasRP ? rpRank[team.teamNumber] : '—';
+        const record = hasRP ? `${rp.wins}–${rp.ties}–${rp.losses}` : null;
+        const rpStr = hasRP ? rp.rp : '—';
         const compStr = composite != null ? ((1 - composite) * 100).toFixed(1) : '—';
-        const epaStr  = epaVal.toFixed(1);
+        const epaStr = epaVal.toFixed(1);
         const ceilBadge = hasCeil
             ? `<span style="color:#4ade80; font-size:0.65em; font-weight:600; margin-left:3px;">CEIL</span>` : '';
-        const oprStr  = opr != null ? opr.toFixed(1) : '—';
+        const oprStr = opr != null ? opr.toFixed(1) : '—';
         const oprBadge = hasLOO
             ? `<span style="color:#fbbf24; font-size:0.65em; font-weight:600; margin-left:3px;">LOO</span>`
             : hasAdj
@@ -1677,7 +1852,7 @@ async function renderAtAGlance() {
                 : '';
 
         const tier = r.tier;
-        const ts   = TIER[tier];
+        const ts = TIER[tier];
         const td = (content, center = true) =>
             `<td style="padding:13px 10px; border-bottom:1px solid #1e293b;${center ? ' text-align:center;' : ''}">${content}</td>`;
         const rankCell = `<td style="padding:13px 10px; border-bottom:1px solid #1e293b; text-align:center; box-shadow:inset 3px 0 0 ${ts.color};">
@@ -1714,7 +1889,7 @@ async function renderAtAGlance() {
 
 window.switchTBATab = function (tab) {
     currentTBATab = tab;
-    document.getElementById('tba-tab-teams').style.display   = tab === 'teams'   ? 'block' : 'none';
+    document.getElementById('tba-tab-teams').style.display = tab === 'teams' ? 'block' : 'none';
     document.getElementById('tba-tab-matches').style.display = tab === 'matches' ? 'block' : 'none';
     document.querySelectorAll('#tbaTabs .detail-tab-btn').forEach((btn, i) => {
         btn.classList.toggle('active', ['teams', 'matches'][i] === tab);
@@ -1725,14 +1900,14 @@ window.switchTBATab = function (tab) {
 // Returns [{m, influence, isIgnored}] for every played match.
 // influence = Σ|ΔOPR| across all teams when this match is removed (or added back if ignored).
 async function computeMatchInfluences() {
-    const allTBATeams  = await db.tbaTeams.toArray();
-    const allMatches   = await db.matches.toArray();
+    const allTBATeams = await db.tbaTeams.toArray();
+    const allMatches = await db.matches.toArray();
     if (!allTBATeams.length) return null;
 
-    const allTeamNums   = allTBATeams.map(t => t.teamNumber);
+    const allTeamNums = allTBATeams.map(t => t.teamNumber);
     const globalIgnored = new Set(allMatches.filter(m => m.globallyIgnored).map(m => m.key));
-    const allPlayed     = allMatches.filter(m => (m.redScore ?? -1) >= 0 && (m.blueScore ?? -1) >= 0);
-    const activePlayed  = allPlayed.filter(m => !globalIgnored.has(m.key));
+    const allPlayed = allMatches.filter(m => (m.redScore ?? -1) >= 0 && (m.blueScore ?? -1) >= 0);
+    const activePlayed = allPlayed.filter(m => !globalIgnored.has(m.key));
 
     const baseOPRs = computeLocalOPR(activePlayed, allTeamNums);
     if (!baseOPRs) return null;
@@ -1740,8 +1915,8 @@ async function computeMatchInfluences() {
     return allPlayed.map(m => {
         const isIgnored = globalIgnored.has(m.key);
         // Non-ignored: LOO (remove m). Ignored: reverse (add m back to active set).
-        const subset   = isIgnored ? [...activePlayed, m] : activePlayed.filter(pm => pm.key !== m.key);
-        const looOPRs  = computeLocalOPR(subset, allTeamNums);
+        const subset = isIgnored ? [...activePlayed, m] : activePlayed.filter(pm => pm.key !== m.key);
+        const looOPRs = computeLocalOPR(subset, allTeamNums);
         const influence = looOPRs
             ? baseOPRs.reduce((sum, opr, i) => sum + Math.abs(opr - looOPRs[i]), 0)
             : null;
@@ -1816,8 +1991,8 @@ function renderMatchInfluenceChart(sorted) {
 }
 
 window.renderMatchInfluenceTab = async function () {
-    const statusEl     = document.getElementById('matchInfluenceStatus');
-    const tableBody    = document.getElementById('matchInfluenceBody');
+    const statusEl = document.getElementById('matchInfluenceStatus');
+    const tableBody = document.getElementById('matchInfluenceBody');
     const tableWrapper = document.getElementById('matchInfluenceTable');
     const chartWrapper = document.getElementById('matchInfluenceChartContainer');
     if (!statusEl || !tableBody) return;
@@ -1842,16 +2017,16 @@ window.renderMatchInfluenceTab = async function () {
 
     tableBody.innerHTML = sorted.map(r => {
         const { m, influence, isIgnored } = r;
-        const played   = (m.redScore ?? -1) >= 0;
-        const redWon   = played && m.redScore  > m.blueScore;
-        const blueWon  = played && m.blueScore > m.redScore;
+        const played = (m.redScore ?? -1) >= 0;
+        const redWon = played && m.redScore > m.blueScore;
+        const blueWon = played && m.blueScore > m.redScore;
         const resultCell = played
-            ? `<span style="color:${redWon  ? '#4ade80' : '#94a3b8'}; font-weight:${redWon  ? 'bold' : 'normal'}">${m.redScore}</span>
+            ? `<span style="color:${redWon ? '#4ade80' : '#94a3b8'}; font-weight:${redWon ? 'bold' : 'normal'}">${m.redScore}</span>
                <span style="color:#475569"> – </span>
                <span style="color:${blueWon ? '#4ade80' : '#94a3b8'}; font-weight:${blueWon ? 'bold' : 'normal'}">${m.blueScore}</span>`
             : '<span style="color:#475569; font-style:italic;">Upcoming</span>';
 
-        const redTeams  = (m.red  || []).map(t =>
+        const redTeams = (m.red || []).map(t =>
             `<span onclick="event.stopPropagation();viewTeamDetail(${t})" style="color:#ef4444;cursor:pointer;">${t}</span>`
         ).join(' ');
         const blueTeams = (m.blue || []).map(t =>
@@ -1991,6 +2166,7 @@ window.switchView = function (viewId, btn) {
 
     // 5. Lazy-render tools tab when first opened
     if (viewId === 'toolsView' && currentToolsTab === 'picklist') renderPickList();
+    if (viewId === 'toolsView' && currentToolsTab === 'draft') renderDraft();
 
     // 6. Update the Back button label on the Team Detail page
     updateDetailBackButton();
@@ -2019,6 +2195,7 @@ window.switchToolsTab = function (tab) {
         btn.classList.toggle('active', ['picklist', 'draft'][i] === tab);
     });
     if (tab === 'picklist') renderPickList();
+    if (tab === 'draft') renderDraft();
 };
 
 // ── Pick List ────────────────────────────────────────────────────────────────
@@ -2060,8 +2237,8 @@ window.dnpTeam = function (teamNumber) {
 };
 
 async function renderPickList() {
-    const table    = document.getElementById('pickListTable');
-    const tbody    = document.getElementById('pickListBody');
+    const table = document.getElementById('pickListTable');
+    const tbody = document.getElementById('pickListBody');
     const statusEl = document.getElementById('pickListStatus');
     if (!table || !tbody) return;
 
@@ -2077,10 +2254,10 @@ async function renderPickList() {
 
     // effOPR — mirrors renderAtAGlance
     const globalIgnored = new Set(allMatches.filter(m => m.globallyIgnored).map(m => m.key));
-    const tbaTeamMap    = Object.fromEntries(allTBATeams.map(t => [t.teamNumber, t]));
+    const tbaTeamMap = Object.fromEntries(allTBATeams.map(t => [t.teamNumber, t]));
     let globalOPRMap = null;
     if (globalIgnored.size > 0) {
-        const teamNums     = allTBATeams.map(t => t.teamNumber);
+        const teamNums = allTBATeams.map(t => t.teamNumber);
         const activePlayed = allMatches.filter(m =>
             (m.redScore ?? -1) >= 0 && (m.blueScore ?? -1) >= 0 && !globalIgnored.has(m.key)
         );
@@ -2100,16 +2277,16 @@ async function renderPickList() {
     const playedMatches = allMatches.filter(m => (m.redScore ?? -1) >= 0);
     for (const m of playedMatches) {
         const redWon = m.redScore > m.blueScore, blueWon = m.blueScore > m.redScore, tie = m.redScore === m.blueScore;
-        const bonusRP = bd => bd ? ((bd.energizedAchieved?1:0)+(bd.superchargedAchieved?1:0)+(bd.traversalAchieved?1:0)) : 0;
-        const redRP  = m.redBreakdown?.rp  ?? ((redWon  ? 3 : tie ? 1 : 0) + bonusRP(m.redBreakdown));
+        const bonusRP = bd => bd ? ((bd.energizedAchieved ? 1 : 0) + (bd.superchargedAchieved ? 1 : 0) + (bd.traversalAchieved ? 1 : 0)) : 0;
+        const redRP = m.redBreakdown?.rp ?? ((redWon ? 3 : tie ? 1 : 0) + bonusRP(m.redBreakdown));
         const blueRP = m.blueBreakdown?.rp ?? ((blueWon ? 3 : tie ? 1 : 0) + bonusRP(m.blueBreakdown));
-        for (const team of (m.red  || [])) {
-            if (!rpMap[team]) rpMap[team] = { rp:0, wins:0, ties:0, losses:0 };
+        for (const team of (m.red || [])) {
+            if (!rpMap[team]) rpMap[team] = { rp: 0, wins: 0, ties: 0, losses: 0 };
             rpMap[team].rp += redRP;
             if (redWon) rpMap[team].wins++; else if (tie) rpMap[team].ties++; else rpMap[team].losses++;
         }
         for (const team of (m.blue || [])) {
-            if (!rpMap[team]) rpMap[team] = { rp:0, wins:0, ties:0, losses:0 };
+            if (!rpMap[team]) rpMap[team] = { rp: 0, wins: 0, ties: 0, losses: 0 };
             rpMap[team].rp += blueRP;
             if (blueWon) rpMap[team].wins++; else if (tie) rpMap[team].ties++; else rpMap[team].losses++;
         }
@@ -2117,15 +2294,15 @@ async function renderPickList() {
 
     // Build rows
     let rows = allTeams.map(team => {
-        const tn       = parseInt(team.teamNumber);
-        const tba      = tbaTeamMap[tn];
-        const rp       = rpMap[String(tn)] || { rp:0, wins:0, ties:0, losses:0 };
-        const opr      = effOPR(tba);
+        const tn = parseInt(team.teamNumber);
+        const tba = tbaTeamMap[tn];
+        const rp = rpMap[String(tn)] || { rp: 0, wins: 0, ties: 0, losses: 0 };
+        const opr = effOPR(tba);
         const analysis = team.analysis || {};
-        const hasCeil  = analysis.ceiling != null && analysis.ceiling !== '—';
-        const epaVal   = hasCeil ? parseFloat(analysis.ceiling) : (team.currentEPA || 0);
-        const hasLOO   = tba?.ignoredMatchKey && tba.adjustedOPR != null && !globalIgnored.has(tba.ignoredMatchKey);
-        const hasAdj   = !hasLOO && globalOPRMap != null;
+        const hasCeil = analysis.ceiling != null && analysis.ceiling !== '—';
+        const epaVal = hasCeil ? parseFloat(analysis.ceiling) : (team.currentEPA || 0);
+        const hasLOO = tba?.ignoredMatchKey && tba.adjustedOPR != null && !globalIgnored.has(tba.ignoredMatchKey);
+        const hasAdj = !hasLOO && globalOPRMap != null;
         return { team, rp, opr, epaVal, hasCeil, hasLOO, hasAdj };
     });
 
@@ -2145,15 +2322,15 @@ async function renderPickList() {
         };
         rows.forEach(r => { r.composite = composite(r); });
         const tierOrder = [...rows].sort((a, b) => a.composite - b.composite);
-        const tierMap   = new Map(tierOrder.map((r, i) => [
+        const tierMap = new Map(tierOrder.map((r, i) => [
             r.team.teamNumber, i < 8 ? 'S' : i < 20 ? 'A' : i < 32 ? 'B' : 'C'
         ]));
         rows.forEach(r => { r.tier = tierMap.get(r.team.teamNumber); });
     }
 
     // Apply saved order; append any new teams at end sorted by composite
-    const SEPARATOR   = Object.freeze({ separator: true });
-    const savedOrder  = loadPickOrder();
+    const SEPARATOR = Object.freeze({ separator: true });
+    const savedOrder = loadPickOrder();
     if (savedOrder.length) {
         const rowMap = new Map(rows.map(r => [String(r.team.teamNumber), r]));
         const orderedWithSep = [];
@@ -2171,21 +2348,21 @@ async function renderPickList() {
     }
 
     const hasOPR = allTBATeams.length > 0;
-    const hasRP  = playedMatches.length > 0;
+    const hasRP = playedMatches.length > 0;
 
     // RP rank (1 = most RP) for top-10 badge
     const rpRankMap = {};
     if (hasRP) {
         Object.entries(rpMap)
             .sort(([, a], [, b]) => b.rp - a.rp)
-            .forEach(([tn, ], i) => { rpRankMap[tn] = i + 1; });
+            .forEach(([tn,], i) => { rpRankMap[tn] = i + 1; });
     }
 
-    const TIER   = {
-        S: { color:'#f59e0b', bg:'rgba(245,158,11,0.08)'  },
-        A: { color:'#4ade80', bg:'rgba(74,222,128,0.07)'  },
-        B: { color:'#60a5fa', bg:'rgba(96,165,250,0.06)'  },
-        C: { color:'#64748b', bg:'rgba(100,116,139,0.03)' },
+    const TIER = {
+        S: { color: '#f59e0b', bg: 'rgba(245,158,11,0.08)' },
+        A: { color: '#4ade80', bg: 'rgba(74,222,128,0.07)' },
+        B: { color: '#60a5fa', bg: 'rgba(96,165,250,0.06)' },
+        C: { color: '#64748b', bg: 'rgba(100,116,139,0.03)' },
     };
 
     table.style.display = 'table';
@@ -2201,15 +2378,15 @@ async function renderPickList() {
         }
         const rowPos = pickPos++;
         const { team, rp, opr, epaVal, hasCeil, hasLOO, hasAdj } = r;
-        const ts       = TIER[r.tier];
-        const record   = hasRP ? `${rp.wins}–${rp.ties}–${rp.losses}` : null;
-        const compStr  = ((1 - r.composite) * 100).toFixed(1);
+        const ts = TIER[r.tier];
+        const record = hasRP ? `${rp.wins}–${rp.ties}–${rp.losses}` : null;
+        const compStr = ((1 - r.composite) * 100).toFixed(1);
         const ceilBadge = hasCeil ? `<span style="color:#4ade80;font-size:0.65em;font-weight:600;margin-left:3px;">CEIL</span>` : '';
-        const oprBadge  = hasLOO
+        const oprBadge = hasLOO
             ? `<span style="color:#fbbf24;font-size:0.65em;font-weight:600;margin-left:3px;">LOO</span>`
             : hasAdj ? `<span style="color:#f97316;font-size:0.65em;font-weight:600;margin-left:3px;">ADJ</span>` : '';
         const td = (content, center = true) =>
-            `<td style="padding:13px 10px;border-bottom:1px solid #1e293b;${center?' text-align:center;':''}">${content}</td>`;
+            `<td style="padding:13px 10px;border-bottom:1px solid #1e293b;${center ? ' text-align:center;' : ''}">${content}</td>`;
 
         return `<tr data-team="${team.teamNumber}" style="background:${ts.bg};">
             <td class="drag-handle" style="padding:13px 10px;border-bottom:1px solid #1e293b;text-align:center;box-shadow:inset 3px 0 0 ${ts.color};">
@@ -2251,7 +2428,7 @@ function enablePickListDrag(tbody) {
         e.preventDefault();
 
         const dragRow = e.target.closest('tr');
-        const rect    = dragRow.getBoundingClientRect();
+        const rect = dragRow.getBoundingClientRect();
         const offsetY = e.clientY - rect.top;
 
         // Ghost: wrap in a table so <tr> renders correctly outside its parent
@@ -2307,7 +2484,7 @@ function enablePickListDrag(tbody) {
             refreshPickPositions();
             savePickOrder();
             document.removeEventListener('pointermove', onMove);
-            document.removeEventListener('pointerup',   finish);
+            document.removeEventListener('pointerup', finish);
             document.removeEventListener('pointercancel', cancel);
         }
 
@@ -2317,14 +2494,221 @@ function enablePickListDrag(tbody) {
             document.body.style.cursor = '';
             clearIndicators();
             document.removeEventListener('pointermove', onMove);
-            document.removeEventListener('pointerup',   finish);
+            document.removeEventListener('pointerup', finish);
             document.removeEventListener('pointercancel', cancel);
         }
 
-        document.addEventListener('pointermove',   onMove);
-        document.addEventListener('pointerup',     finish);
+        document.addEventListener('pointermove', onMove);
+        document.addEventListener('pointerup', finish);
         document.addEventListener('pointercancel', cancel);
     });
+}
+
+// ── Draft ────────────────────────────────────────────────────────────────
+
+const DRAFT_ALLIANCE_COLORS = [
+    { solid: '#ef4444', bg: 'rgba(239,68,68,0.10)' },
+    { solid: '#f97316', bg: 'rgba(249,115,22,0.10)' },
+    { solid: '#eab308', bg: 'rgba(234,179,8,0.10)' },
+    { solid: '#22c55e', bg: 'rgba(34,197,94,0.10)' },
+    { solid: '#06b6d4', bg: 'rgba(6,182,212,0.10)' },
+    { solid: '#3b82f6', bg: 'rgba(59,130,246,0.10)' },
+    { solid: '#8b5cf6', bg: 'rgba(139,92,246,0.10)' },
+    { solid: '#ec4899', bg: 'rgba(236,72,153,0.10)' },
+];
+let draftRPRankedTeams = [];
+let draftHistory = [];
+
+function loadDraftState() {
+    try { const s = JSON.parse(localStorage.getItem('draftState')); if (s?.alliances?.length === 8) return s; } catch { }
+    return null;
+}
+function saveDraftState(s) { localStorage.setItem('draftState', JSON.stringify(s)); }
+function freshDraftState() {
+    return { alliances: Array.from({ length: 8 }, () => ({ captain: null, pick1: null, pick2: null })), currentAlliance: 0, currentRound: 1 };
+}
+function buildDraftPickedSet(alliances) {
+    const s = new Set();
+    for (const a of alliances) {
+        if (a.captain) s.add(String(a.captain));
+        if (a.pick1) s.add(String(a.pick1));
+        if (a.pick2) s.add(String(a.pick2));
+    }
+    return s;
+}
+function draftFillCaptain(state) {
+    if (state.currentRound !== 1 || state.currentAlliance >= 8) return;
+    const a = state.alliances[state.currentAlliance];
+    if (a.captain !== null) return;
+    const picked = buildDraftPickedSet(state.alliances);
+    const next = draftRPRankedTeams.find(tn => !picked.has(String(tn)));
+    if (next != null) a.captain = String(next);
+}
+
+window.resetDraft = function () {
+    draftHistory = [];
+    localStorage.removeItem('draftState');
+    renderDraft();
+};
+window.draftUndo = function () {
+    if (!draftHistory.length) return;
+    saveDraftState(JSON.parse(draftHistory.pop()));
+    renderDraft();
+};
+window.draftPick = function (teamNumber) {
+    const tn = String(teamNumber);
+    const state = loadDraftState() || freshDraftState();
+    if (state.currentAlliance >= 8 || state.currentAlliance < 0) return;
+    if (buildDraftPickedSet(state.alliances).has(tn)) return;
+    draftHistory.push(JSON.stringify(state));
+    const a = state.alliances[state.currentAlliance];
+    if (state.currentRound === 1) {
+        if (!a.captain || a.pick1 !== null) return;
+        a.pick1 = tn;
+        state.currentAlliance++;
+        if (state.currentAlliance >= 8) { state.currentRound = 2; state.currentAlliance = 7; }
+        else draftFillCaptain(state);
+    } else {
+        if (a.pick2 !== null) return;
+        a.pick2 = tn;
+        state.currentAlliance--;
+    }
+    saveDraftState(state);
+    renderDraft();
+};
+
+async function renderDraft() {
+    const allianceBody = document.getElementById('draftAllianceBody');
+    const pickPanel = document.getElementById('draftPickPanel');
+    const statusEl = document.getElementById('draftStatus');
+    if (!allianceBody || !pickPanel) return;
+
+    const [allTeams, allMatches] = await Promise.all([db.teams.toArray(), db.matches.toArray()]);
+
+    if (!allTeams.length) {
+        if (statusEl) statusEl.textContent = 'No team data — sync Statbotics first.';
+        allianceBody.innerHTML = '';
+        pickPanel.innerHTML = '<p style="color:#64748b;font-size:0.9em;padding:12px;">No data.</p>';
+        return;
+    }
+
+    const teamInfoMap = Object.fromEntries(allTeams.map(t => [String(t.teamNumber), t]));
+
+    // RP totals (mirrors renderPickList logic)
+    const rpTotals = {};
+    const played = allMatches.filter(m => (m.redScore ?? -1) >= 0);
+    for (const m of played) {
+        const redWon = m.redScore > m.blueScore, tie = m.redScore === m.blueScore, blueWon = !redWon && !tie;
+        const bonusRP = bd => bd ? ((bd.energizedAchieved ? 1 : 0) + (bd.superchargedAchieved ? 1 : 0) + (bd.traversalAchieved ? 1 : 0)) : 0;
+        const rRP = m.redBreakdown?.rp ?? ((redWon ? 3 : tie ? 1 : 0) + bonusRP(m.redBreakdown));
+        const bRP = m.blueBreakdown?.rp ?? ((blueWon ? 3 : tie ? 1 : 0) + bonusRP(m.blueBreakdown));
+        (m.red || []).forEach(t => { rpTotals[t] = (rpTotals[t] || 0) + rRP; });
+        (m.blue || []).forEach(t => { rpTotals[t] = (rpTotals[t] || 0) + bRP; });
+    }
+    // RP-ranked list for captain auto-fill
+    draftRPRankedTeams = Object.entries(rpTotals).sort(([, a], [, b]) => b - a).map(([tn]) => tn);
+    const rpSet = new Set(draftRPRankedTeams);
+    allTeams.forEach(t => { if (!rpSet.has(String(t.teamNumber))) draftRPRankedTeams.push(String(t.teamNumber)); });
+    if (!played.length) {
+        const po = (() => { try { return JSON.parse(localStorage.getItem('pickListOrder')) || []; } catch { return []; } })()
+            .filter(t => t !== '---separator---');
+        if (po.length) draftRPRankedTeams = po;
+    }
+
+    // Quick tier by EPA rank (for pick panel color coding)
+    const sortedByEPA = allTeams.slice().sort((a, b) => (b.currentEPA || 0) - (a.currentEPA || 0));
+    const epaRankOf = Object.fromEntries(sortedByEPA.map((t, i) => [String(t.teamNumber), i]));
+    const quickTier = tn => { const r = epaRankOf[tn] ?? 99; return r < 8 ? 'S' : r < 20 ? 'A' : r < 32 ? 'B' : 'C'; };
+    const TIER_CLR = { S: '#f59e0b', A: '#4ade80', B: '#60a5fa', C: '#64748b' };
+
+    // Load/init state; auto-fill first captain
+    let state = loadDraftState() || freshDraftState();
+    draftFillCaptain(state);
+    saveDraftState(state);
+
+    const picked = buildDraftPickedSet(state.alliances);
+    const isDone = state.currentAlliance >= 8 || state.currentAlliance < 0;
+    const isUser = !isDone && (state.currentRound === 2 || state.alliances[state.currentAlliance]?.captain !== null);
+
+    if (statusEl) {
+        if (isDone) {
+            statusEl.textContent = 'Draft complete.';
+        } else if (isUser) {
+            const which = state.currentRound === 1 ? '1st pick' : '2nd pick';
+            statusEl.textContent = `Alliance ${state.currentAlliance + 1} selecting ${which} — click a team →`;
+        } else {
+            statusEl.textContent = 'Filling captain…';
+        }
+    }
+
+    // ── Alliance table ──
+    const epaOf = tn => { const t = teamInfoMap[tn]; return t ? parseFloat(t.analysis?.ceiling ?? t.currentEPA ?? 0) || 0 : 0; };
+
+    // Expected total = sum of top 24 EPAs divided evenly across 8 alliances
+    const top24sum = allTeams.map(t => epaOf(String(t.teamNumber))).sort((a, b) => b - a).slice(0, 24).reduce((s, v) => s + v, 0);
+    const expectedTotal = top24sum / 8;
+
+    const teamChip = tn => {
+        if (!tn) return `<span style="color:#1e293b;">—</span>`;
+        return `<span style="font-weight:800;color:#f8fafc;">${tn}</span>`;
+    };
+    allianceBody.innerHTML = state.alliances.map((a, i) => {
+        const { solid, bg } = DRAFT_ALLIANCE_COLORS[i];
+        const isActive = !isDone && state.currentAlliance === i;
+        const rowBg = isActive ? bg : (i % 2 ? '#080d16' : '#0f172a');
+        const leftBorder = isActive ? `box-shadow:inset 3px 0 0 ${solid};` : '';
+        const activePick1 = isActive && state.currentRound === 1 && !!a.captain && !a.pick1;
+        const activePick2 = isActive && state.currentRound === 2 && !a.pick2;
+        const cell = (content, active) =>
+            `<td style="padding:11px 10px;border-bottom:1px solid #1e293b;text-align:center;` +
+            (active ? `outline:1px dashed ${solid};outline-offset:-3px;` : '') + `">${content}</td>`;
+
+        const all3 = a.captain && a.pick1 && a.pick2;
+        const total = all3 ? epaOf(a.captain) + epaOf(a.pick1) + epaOf(a.pick2) : null;
+        const pct = total != null && expectedTotal > 0 ? (total - expectedTotal) / expectedTotal : null;
+        const totalColor = pct == null ? '#334155'
+            : pct > 0.12 ? '#4ade80'
+                : pct > 0.04 ? '#a3e635'
+                    : pct > -0.04 ? '#f8fafc'
+                        : pct > -0.12 ? '#fb923c'
+                            : '#ef4444';
+
+        return `<tr style="background:${rowBg};${leftBorder}">
+            <td style="padding:11px 8px;border-bottom:1px solid #1e293b;text-align:center;">
+                <span style="color:#f8fafc;font-weight:900;font-size:1.2em;">${i + 1}</span>
+            </td>
+            ${cell(teamChip(a.captain), false)}
+            ${cell(teamChip(a.pick1), activePick1)}
+            ${cell(teamChip(a.pick2), activePick2)}
+            <td style="padding:11px 10px;border-bottom:1px solid #1e293b;text-align:center;color:${totalColor};font-weight:700;">
+                ${total != null ? total.toFixed(1) : '—'}
+            </td>
+        </tr>`;
+    }).join('');
+
+    // ── Pick panel ──
+    const rawOrder = (() => {
+        try { return JSON.parse(localStorage.getItem('pickListOrder')) || []; } catch { return []; }
+    })().filter(t => t !== '---separator---');
+    const available = rawOrder.filter(tn => !picked.has(tn) && teamInfoMap[tn]);
+    const avSet = new Set(available);
+    allTeams.forEach(t => { const tn = String(t.teamNumber); if (!picked.has(tn) && !avSet.has(tn)) available.push(tn); });
+
+    pickPanel.innerHTML = available.map((tn, idx) => {
+        const t = teamInfoMap[tn];
+        if (!t) return '';
+        const tierColor = TIER_CLR[quickTier(tn)];
+        const epaVal = t.analysis?.ceiling ?? t.currentEPA;
+        const epaStr = epaVal != null && epaVal !== '—' ? parseFloat(epaVal).toFixed(1) : '';
+        return `<div class="draft-pick-item" ${isUser ? `onclick="draftPick('${tn}')"` : ''}
+            style="padding:9px 12px;border-bottom:1px solid #1e293b;display:flex;align-items:center;gap:8px;
+            border-left:3px solid ${tierColor};cursor:${isUser ? 'pointer' : 'default'};${!isUser ? 'opacity:0.45;' : ''}">
+            <span style="color:#475569;font-size:0.75em;min-width:22px;text-align:right;font-weight:600;">${idx + 1}</span>
+            <strong style="color:#f8fafc;font-size:0.95em;">${tn}</strong>
+            <span style="color:#94a3b8;font-size:0.82em;flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${t.teamName || ''}</span>
+            ${epaStr ? `<span style="color:#475569;font-size:0.75em;font-weight:600;">${epaStr}</span>` : ''}
+        </div>`;
+    }).join('') || '<p style="color:#64748b;font-size:0.9em;padding:12px;">All teams placed.</p>';
 }
 
 window.updateDetailBackButton = function () {
@@ -2414,9 +2798,9 @@ async function renderOverview(team, tbaTeam) {
             <p style="color:#475569; font-style:italic; margin:0; font-size:0.9em;">${text}</p>
         </div>`;
 
-    const hasTBA     = !!tbaTeam;
+    const hasTBA = !!tbaTeam;
     const hasCompOPR = hasTBA && tbaTeam.autoOPR != null;
-    const ccwmColor  = hasTBA && tbaTeam.ccwm != null ? (tbaTeam.ccwm >= 0 ? '#4ade80' : '#f87171') : '#f1f5f9';
+    const ccwmColor = hasTBA && tbaTeam.ccwm != null ? (tbaTeam.ccwm >= 0 ? '#4ade80' : '#f87171') : '#f1f5f9';
 
     el.innerHTML = `
         <div style="display:flex; gap:24px; align-items:flex-start; flex-wrap:wrap; margin-bottom:24px;">
@@ -2436,19 +2820,19 @@ async function renderOverview(team, tbaTeam) {
         ${sectionLabel('Statbotics EPA')}
         <div style="display:grid; grid-template-columns:repeat(auto-fit,minmax(110px,1fr)); gap:12px;">
             ${card('Total EPA', fmt(team.currentEPA))}
-            ${card('Auto',      fmt(team.autoEPA))}
-            ${card('Teleop',    fmt(team.teleopEPA))}
-            ${card('Endgame',   fmt(team.endgameEPA))}
-            ${card('Ceiling',   ceilStr, '#4ade80', ciStr ? `90%: ${ciStr}` : null)}
+            ${card('Auto', fmt(team.autoEPA))}
+            ${card('Teleop', fmt(team.teleopEPA))}
+            ${card('Endgame', fmt(team.endgameEPA))}
+            ${card('Ceiling', ceilStr, '#4ade80', ciStr ? `90%: ${ciStr}` : null)}
         </div>
 
         ${sectionLabel('TBA OPR')}
         <div style="display:grid; grid-template-columns:repeat(auto-fit,minmax(110px,1fr)); gap:12px;">
-            ${card(oprLabel,    effOPRVal != null ? fmt(effOPRVal) : '—')}
-            ${card('DPR',       hasTBA ? fmt(tbaTeam.dpr)  : '—')}
-            ${card('CCWM',      hasTBA ? fmt(tbaTeam.ccwm) : '—', ccwmColor)}
-            ${hasCompOPR ? card('Auto OPR',    fmt(tbaTeam.autoOPR))    : ''}
-            ${hasCompOPR ? card('Teleop OPR',  fmt(tbaTeam.teleopOPR))  : ''}
+            ${card(oprLabel, effOPRVal != null ? fmt(effOPRVal) : '—')}
+            ${card('DPR', hasTBA ? fmt(tbaTeam.dpr) : '—')}
+            ${card('CCWM', hasTBA ? fmt(tbaTeam.ccwm) : '—', ccwmColor)}
+            ${hasCompOPR ? card('Auto OPR', fmt(tbaTeam.autoOPR)) : ''}
+            ${hasCompOPR ? card('Teleop OPR', fmt(tbaTeam.teleopOPR)) : ''}
             ${hasCompOPR ? card('Endgame OPR', fmt(tbaTeam.endgameOPR)) : ''}
         </div>
 
@@ -2478,7 +2862,7 @@ async function fetchAndCacheTeamPhoto(teamNumber, photoElId) {
             const blob = await resp.blob();
             dataUrl = await new Promise((resolve, reject) => {
                 const reader = new FileReader();
-                reader.onload  = () => resolve(reader.result);
+                reader.onload = () => resolve(reader.result);
                 reader.onerror = reject;
                 reader.readAsDataURL(blob);
             });
@@ -2527,10 +2911,10 @@ async function renderTBADetail(teamNumber, tbaTeam) {
         return;
     }
 
-    const allTBATeams   = await db.tbaTeams.toArray();
-    const allMatches    = await db.matches.toArray();
-    const allTeamNums   = allTBATeams.map(t => t.teamNumber);
-    const oprByTeam     = Object.fromEntries(allTBATeams.map(t => [t.teamNumber.toString(), t]));
+    const allTBATeams = await db.tbaTeams.toArray();
+    const allMatches = await db.matches.toArray();
+    const allTeamNums = allTBATeams.map(t => t.teamNumber);
+    const oprByTeam = Object.fromEntries(allTBATeams.map(t => [t.teamNumber.toString(), t]));
     const globalIgnored = new Set(allMatches.filter(m => m.globallyIgnored).map(m => m.key));
     // Base OPR computation excludes globally ignored matches so LOO deltas are self-consistent.
     const playedMatches = allMatches.filter(m =>
@@ -2541,7 +2925,7 @@ async function renderTBADetail(teamNumber, tbaTeam) {
 
     const teamMatches = allMatches
         .filter(m =>
-            (m.red  || []).map(String).includes(teamNumStr) ||
+            (m.red || []).map(String).includes(teamNumStr) ||
             (m.blue || []).map(String).includes(teamNumStr))
         .sort((a, b) => a.matchNumber - b.matchNumber);
 
@@ -2596,21 +2980,21 @@ async function renderTBADetail(teamNumber, tbaTeam) {
     }
 
     // Compute base OPR locally so LOO deltas are self-consistent regardless of TBA's exact algorithm.
-    const teamIdx  = allTeamNums.findIndex(n => n.toString() === teamNumStr);
+    const teamIdx = allTeamNums.findIndex(n => n.toString() === teamNumStr);
     const baseOPRs = teamIdx !== -1 ? computeLocalOPR(playedMatches, allTeamNums) : null;
-    const baseOPR  = baseOPRs ? baseOPRs[teamIdx] : null;
+    const baseOPR = baseOPRs ? baseOPRs[teamIdx] : null;
 
     const rows = teamMatches.map(m => {
-        const isRed             = (m.red || []).map(String).includes(teamNumStr);
-        const alliance          = isRed ? (m.red || []) : (m.blue || []);
-        const score             = isRed ? m.redScore : m.blueScore;
-        const played            = (score ?? -1) >= 0;
+        const isRed = (m.red || []).map(String).includes(teamNumStr);
+        const alliance = isRed ? (m.red || []) : (m.blue || []);
+        const score = isRed ? m.redScore : m.blueScore;
+        const played = (score ?? -1) >= 0;
         const isGloballyIgnored = globalIgnored.has(m.key);
         // Only compute OPR columns for matches that are part of the active base.
         const predicted = !isGloballyIgnored
             ? alliance.reduce((s, t) => s + (oprByTeam[String(t)]?.opr || 0), 0)
             : null;
-        const residual  = played && !isGloballyIgnored ? score - predicted : null;
+        const residual = played && !isGloballyIgnored ? score - predicted : null;
 
         let looOPR = null, impact = null;
         if (played && !isGloballyIgnored && baseOPR != null) {
@@ -2624,7 +3008,7 @@ async function renderTBADetail(teamNumber, tbaTeam) {
     });
 
     const fmtSigned = v => v != null ? (v >= 0 ? '+' : '') + v.toFixed(1) : '—';
-    const resColor  = v => v == null ? 'inherit' : v >= 0 ? '#4ade80' : '#f87171';
+    const resColor = v => v == null ? 'inherit' : v >= 0 ? '#4ade80' : '#f87171';
 
     tableSection.innerHTML = `
         <table class="breakdown-table" style="margin-top:0;">
@@ -2640,32 +3024,32 @@ async function renderTBADetail(teamNumber, tbaTeam) {
             </tr></thead>
             <tbody>
                 ${rows.map(r => {
-                    const isGlobal      = r.isGloballyIgnored;
-                    const isIndivIgnored = !isGlobal && tbaTeam.ignoredMatchKey === r.m.key;
-                    const rowStyle = isGlobal
-                        ? 'cursor:pointer; opacity:0.4;'
-                        : isIndivIgnored
-                        ? 'cursor:pointer; background:rgba(251,191,36,0.06);'
-                        : 'cursor:pointer;';
-                    const matchLabel = isGlobal
-                        ? `Q${r.m.matchNumber} <span style="color:#f59e0b; font-size:0.7em; font-weight:600;">GLOBAL</span>`
-                        : `Q${r.m.matchNumber}`;
+        const isGlobal = r.isGloballyIgnored;
+        const isIndivIgnored = !isGlobal && tbaTeam.ignoredMatchKey === r.m.key;
+        const rowStyle = isGlobal
+            ? 'cursor:pointer; opacity:0.4;'
+            : isIndivIgnored
+                ? 'cursor:pointer; background:rgba(251,191,36,0.06);'
+                : 'cursor:pointer;';
+        const matchLabel = isGlobal
+            ? `Q${r.m.matchNumber} <span style="color:#f59e0b; font-size:0.7em; font-weight:600;">GLOBAL</span>`
+            : `Q${r.m.matchNumber}`;
 
-                    let ignoreBtn = '';
-                    if (isGlobal) {
-                        ignoreBtn = `<button onclick="event.stopPropagation();setGloballyIgnored('${r.m.key}',false)"
+        let ignoreBtn = '';
+        if (isGlobal) {
+            ignoreBtn = `<button onclick="event.stopPropagation();setGloballyIgnored('${r.m.key}',false)"
                             style="padding:3px 10px; font-size:0.8em; background:#92400e; border:1px solid #d97706; color:#fde68a; border-radius:4px; cursor:pointer; white-space:nowrap;">
                             Restore Global</button>`;
-                    } else if (r.played && r.looOPR != null) {
-                        const ignoreArgs = isIndivIgnored
-                            ? `${teamNumber}, null, null`
-                            : `${teamNumber}, '${r.m.key}', ${r.looOPR.toFixed(2)}`;
-                        ignoreBtn = `<button onclick="event.stopPropagation();setIgnoredMatch(${ignoreArgs})"
+        } else if (r.played && r.looOPR != null) {
+            const ignoreArgs = isIndivIgnored
+                ? `${teamNumber}, null, null`
+                : `${teamNumber}, '${r.m.key}', ${r.looOPR.toFixed(2)}`;
+            ignoreBtn = `<button onclick="event.stopPropagation();setIgnoredMatch(${ignoreArgs})"
                             style="padding:3px 10px; font-size:0.8em; background:${isIndivIgnored ? '#92400e' : '#1e293b'}; border:1px solid ${isIndivIgnored ? '#d97706' : '#475569'}; color:${isIndivIgnored ? '#fde68a' : '#94a3b8'}; border-radius:4px; cursor:pointer; white-space:nowrap;">
                             ${isIndivIgnored ? 'Restore' : 'Ignore'}</button>`;
-                    }
+        }
 
-                    return `<tr onclick="viewMatchDetail('${r.m.key}')" style="${rowStyle}">
+        return `<tr onclick="viewMatchDetail('${r.m.key}')" style="${rowStyle}">
                         <td style="text-align:left;">${matchLabel}</td>
                         <td><span style="color:${r.isRed ? '#ef4444' : '#3b82f6'}; font-weight:bold;">${r.isRed ? 'Red' : 'Blue'}</span></td>
                         <td>${r.played ? r.score : '—'}</td>
@@ -2675,7 +3059,7 @@ async function renderTBADetail(teamNumber, tbaTeam) {
                         <td style="color:${resColor(r.impact)}; font-weight:bold;">${fmtSigned(r.impact)}</td>
                         <td>${ignoreBtn}</td>
                     </tr>`;
-                }).join('')}
+    }).join('')}
             </tbody>
         </table>`;
 }
@@ -2806,6 +3190,13 @@ const bootApp = async () => {
         document.getElementById('eventKeyInput').value = savedKey;
     }
 
+    // Restore sync timestamps
+    for (const key of ['statboticsLive', 'tbaOPR', 'tbaMatches']) {
+        const saved = localStorage.getItem(`lastSync_${key}`);
+        const el = document.getElementById(`ts-${key}`);
+        if (saved && el) el.textContent = `Last sync: ${saved}`;
+    }
+
     // 1. Set the initial view (Home)
     const homeBtn = document.querySelector('.nav-btn');
     if (homeBtn) window.switchView('homeView', homeBtn);
@@ -2839,7 +3230,7 @@ window.switchView('homeView', homeBtn);
 document.getElementById('eventKeyInput').value = localStorage.getItem('lastEventKey') || '';
 
 if ('serviceWorker' in navigator) {
-    navigator.serviceWorker.register('/sw.js').catch(() => {});
+    navigator.serviceWorker.register('/sw.js').catch(() => { });
 }
 
 
