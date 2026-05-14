@@ -3378,7 +3378,7 @@ window.switchView('homeView', homeBtn);
 document.getElementById('eventKeyInput').value = localStorage.getItem('lastEventKey') || '';
 
 if ('serviceWorker' in navigator) {
-    navigator.serviceWorker.register('/sw.js').catch(() => { });
+    navigator.serviceWorker.register(import.meta.env.BASE_URL + 'sw.js').catch(() => { });
 }
 
 
