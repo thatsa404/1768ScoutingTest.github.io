@@ -1,5 +1,5 @@
 const CACHE = 'scouting-v1';
-const SHELL = ['/', '/index.html', '/main.js'];
+const SHELL = ['/', '/index.html', '/main.js', '/manifest.json', '/logo.png'];
 
 self.addEventListener('install', event => {
     event.waitUntil(

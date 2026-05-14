@@ -66,66 +66,94 @@ window.displaySchedule = async function () {
     const body = document.getElementById('scheduleBody');
     if (!body) return;
 
-    // 1. Fetch from IndexedDB (Dexie)
-    // We order by matchNumber so they show up in chronological order
     const matches = await db.matches.orderBy('matchNumber').toArray();
+    const isMobile = document.body.classList.contains('mobile-ui');
+    const thead = document.querySelector('#scheduleTable thead');
 
-    // 2. If the DB is empty, show a friendly message or clear the table
     if (matches.length === 0) {
-        body.innerHTML = '<tr><td colspan="8" style="text-align:center; padding:20px;">No matches cached. Hit "Sync Schedule" on the Home tab.</td></tr>';
+        body.innerHTML = `<tr><td colspan="${isMobile ? 5 : 8}" style="text-align:center; padding:20px;">No matches cached. Hit "Sync Schedule" on the Home tab.</td></tr>`;
         return;
+    }
+
+    // Rebuild thead to match layout
+    if (isMobile) {
+        thead.innerHTML = `<tr>
+            <th style="text-align:center;">Match</th>
+            <th>1</th><th>2</th><th>3</th>
+            <th style="text-align:center;">Score</th>
+        </tr>`;
+    } else {
+        thead.innerHTML = `
+            <tr>
+                <th rowspan="2">Match</th>
+                <th colspan="3" class="red-header">Red Alliance</th>
+                <th colspan="3" class="blue-header">Blue Alliance</th>
+                <th rowspan="2">Result</th>
+            </tr>
+            <tr>
+                <th class="red-header">1</th><th class="red-header">2</th><th class="red-header">3</th>
+                <th class="blue-header">1</th><th class="blue-header">2</th><th class="blue-header">3</th>
+            </tr>`;
     }
 
     body.innerHTML = '';
 
+    const teamCell = (team, cls) =>
+        `<td class="${cls}" data-team="${team}" onclick="highlightTeam('${team}')" style="cursor:pointer;"><strong>${team}</strong></td>`;
+
     matches.forEach(m => {
-        const row = document.createElement('tr');
-
-        // Format the result string
-        const result = (m.redScore > -1)
-            ? `<strong>${m.redScore}</strong> - <strong>${m.blueScore}</strong>`
-            : '<span style="color: #999; font-style: italic;">Upcoming</span>';
-
-        // Build the team cells dynamically
-        // Red 1, 2, 3
-        const redCells = m.red.map(team => `
-            <td class="red-cell" 
-                data-team="${team}" 
-                onclick="highlightTeam('${team}')" 
-                style="cursor: pointer;">
-                <strong>${team}</strong>
-            </td>`).join('');
-        // Blue 1, 2, 3
-        const blueCells = m.blue.map(team => `
-            <td class="blue-cell" 
-                data-team="${team}" 
-                onclick="highlightTeam('${team}')" 
-                style="cursor: pointer;">
-                <strong>${team}</strong>
-            </td>`).join('');
-
-        const redWon = m.redScore > -1 && m.redScore > m.blueScore;
+        const redWon  = m.redScore > -1 && m.redScore > m.blueScore;
         const blueWon = m.redScore > -1 && m.blueScore > m.redScore;
-        const resultCell = (m.redScore > -1)
-            ? `<td onclick="viewMatchDetail('${m.key}')" style="cursor:pointer; border-left:2px solid #334155; white-space:nowrap;">
-                <span style="color:${redWon ? '#4ade80' : '#94a3b8'}; font-weight:${redWon ? 'bold' : 'normal'}">${m.redScore}</span>
-                <span style="color:#475569;"> – </span>
-                <span style="color:${blueWon ? '#4ade80' : '#94a3b8'}; font-weight:${blueWon ? 'bold' : 'normal'}">${m.blueScore}</span>
-               </td>`
-            : `<td style="color:#64748b; font-style:italic; border-left:2px solid #334155;">Upcoming</td>`;
 
-        row.innerHTML = `
-            <td class="match-number" 
-                onclick="viewMatchPrep('${m.key}')" 
-                style="cursor: pointer; text-decoration: underline; color: #3b82f6;">
-                Qual ${m.matchNumber}
-            </td>
-            ${redCells}
-            ${blueCells}
-            ${resultCell}
-        `;
-        body.appendChild(row);
+        if (isMobile) {
+            const redRow  = document.createElement('tr');
+            const blueRow = document.createElement('tr');
+            redRow.dataset.matchStart = 'true';
+            redRow.dataset.teams = [...m.red, ...m.blue].join(',');
+
+            const redCells  = m.red.map(t  => teamCell(t,  'red-cell')).join('');
+            const blueCells = m.blue.map(t => teamCell(t, 'blue-cell')).join('');
+
+            const scoreCell = m.redScore > -1
+                ? `<td rowspan="2" onclick="viewMatchDetail('${m.key}')"
+                       style="cursor:pointer;border-left:2px solid #334155;vertical-align:middle;text-align:center;white-space:nowrap;padding:4px 8px;">
+                       <div style="color:${redWon  ? '#4ade80' : '#94a3b8'};font-weight:${redWon  ? '800' : 'normal'};">${m.redScore}</div>
+                       <div style="color:#334155;font-size:0.65em;line-height:1.4;">—</div>
+                       <div style="color:${blueWon ? '#4ade80' : '#94a3b8'};font-weight:${blueWon ? '800' : 'normal'};">${m.blueScore}</div>
+                   </td>`
+                : `<td rowspan="2" style="color:#64748b;font-style:italic;border-left:2px solid #334155;vertical-align:middle;text-align:center;">—</td>`;
+
+            redRow.innerHTML = `
+                <td class="match-number" rowspan="2" onclick="viewMatchPrep('${m.key}')"
+                    style="cursor:pointer;text-decoration:underline;color:#3b82f6;vertical-align:middle;text-align:center;white-space:nowrap;padding:4px 6px;">
+                    Q${m.matchNumber}
+                </td>
+                ${redCells}${scoreCell}`;
+            blueRow.innerHTML = blueCells;
+
+            body.appendChild(redRow);
+            body.appendChild(blueRow);
+        } else {
+            const row = document.createElement('tr');
+            row.dataset.matchStart = 'true';
+            row.dataset.teams = [...m.red, ...m.blue].join(',');
+            const redCells  = m.red.map(t  => teamCell(t,  'red-cell')).join('');
+            const blueCells = m.blue.map(t => teamCell(t, 'blue-cell')).join('');
+            const resultCell = m.redScore > -1
+                ? `<td onclick="viewMatchDetail('${m.key}')" style="cursor:pointer;border-left:2px solid #334155;white-space:nowrap;">
+                       <span style="color:${redWon  ? '#4ade80' : '#94a3b8'};font-weight:${redWon  ? 'bold' : 'normal'}">${m.redScore}</span>
+                       <span style="color:#475569;"> – </span>
+                       <span style="color:${blueWon ? '#4ade80' : '#94a3b8'};font-weight:${blueWon ? 'bold' : 'normal'}">${m.blueScore}</span>
+                   </td>`
+                : `<td style="color:#64748b;font-style:italic;border-left:2px solid #334155;">Upcoming</td>`;
+            row.innerHTML = `
+                <td class="match-number" onclick="viewMatchPrep('${m.key}')"
+                    style="cursor:pointer;text-decoration:underline;color:#3b82f6;">Qual ${m.matchNumber}</td>
+                ${redCells}${blueCells}${resultCell}`;
+            body.appendChild(row);
+        }
     });
+    applyScheduleFilter();
 };
 
 let prepChartInstance = null; // Global variable to handle chart destruction
@@ -137,6 +165,7 @@ window.viewMatchPrep = async function (matchKey) {
     // 1. Update the Header and Switch View
     document.getElementById('prepMatchLabel').innerText = `Match Prep: Qual ${match.matchNumber}`;
     window.switchView('matchPrepView');
+    pushNavState('matchPrep');
 
     // Helper to get team data and return a stats object
     const getTeamStats = async (teamNum) => {
@@ -376,13 +405,18 @@ window.viewMatchDetail = async function (matchKey) {
         }).join('');
     }
 
+    if (document.body.classList.contains('split-ui')) {
+        document.getElementById('teamDetailView').style.display = 'none';
+    }
     document.getElementById('matchDetailView').style.display = 'flex';
+    pushNavState('matchDetail');
 };
 
 window.openLightbox = function (url) {
     const lb = document.getElementById('photoLightbox');
     document.getElementById('lightboxImg').src = url;
     lb.style.display = 'flex';
+    pushNavState('lightbox');
 };
 
 window.closeLightbox = function () {
@@ -438,6 +472,7 @@ window.highlightTeam = function (teamNumber) {
 
     // 4. Update the Prep cards if they are currently visible
     window.refreshPrepHighlight();
+    applyScheduleFilter();
 };
 
 window.refreshPrepHighlight = function () {
@@ -1080,6 +1115,7 @@ function renderTeamChart(sortedTeams) {
     const ctx = document.getElementById('teamComparisonChart').getContext('2d');
     if (teamChartInstance) teamChartInstance.destroy();
 
+    const isMobile = document.body.classList.contains('mobile-ui');
     // Prepare labels (Team Numbers)
     const labels = sortedTeams.map(t => t.teamNumber.toString());
 
@@ -1120,8 +1156,8 @@ function renderTeamChart(sortedTeams) {
                     borderColor: '#ffffff',
                     borderWidth: 2,
                     pointStyle: 'circle',
-                    pointRadius: 5,
-                    pointHoverRadius: 7,
+                    pointRadius: isMobile ? 2.5 : 5,
+                    pointHoverRadius: isMobile ? 4 : 7,
                     order: 1,
                 },
                 {
@@ -1137,8 +1173,8 @@ function renderTeamChart(sortedTeams) {
                     pointBackgroundColor: '#ffffff',
                     pointBorderColor: '#ffffff',
                     pointStyle: 'circle',
-                    pointRadius: 6,
-                    pointHoverRadius: 8,
+                    pointRadius: isMobile ? 3 : 6,
+                    pointHoverRadius: isMobile ? 4 : 8,
                     spanGaps: false,
                     fill: false,
                     order: 2,
@@ -1545,6 +1581,7 @@ window.sortTBABy = function (column) {
 function renderTBAChart(teams, effOPR) {
     const ctx = document.getElementById('tbaComparisonChart').getContext('2d');
     if (tbaChartInstance) tbaChartInstance.destroy();
+    const isMobile = document.body.classList.contains('mobile-ui');
     const hasComponents = teams.some(t => t.autoOPR != null);
     const labels = teams.map(t => t.teamNumber.toString());
     const getOPR = effOPR || (t => t.opr || 0);
@@ -1563,8 +1600,8 @@ function renderTBAChart(teams, effOPR) {
         borderColor: '#ffffff',
         borderWidth: 2,
         pointStyle: 'circle',
-        pointRadius: 5,
-        pointHoverRadius: 7,
+        pointRadius: isMobile ? 2.5 : 5,
+        pointHoverRadius: isMobile ? 4 : 7,
         order: 1,
     });
     tbaChartInstance = new Chart(ctx, {
@@ -2130,6 +2167,7 @@ window.viewTeamDetail = async function (teamNumber) {
     switchDetailTab('overview');
 
     window.switchView('teamDetailView');
+    pushNavState('teamDetail');
 };
 
 window.closeDetail = function () {
@@ -2140,8 +2178,110 @@ window.closeDetail = function () {
 // At the top of main.js
 window.currentView = 'scheduleView';
 window.previousView = 'scheduleView';
+window.scheduleFilterActive = false;
+
+function applyScheduleFilter() {
+    const active = window.scheduleFilterActive && window.currentFocusedTeam;
+    const team = window.currentFocusedTeam;
+    const isMobile = document.body.classList.contains('mobile-ui');
+
+    // Remove any existing gap rows before re-evaluating
+    document.querySelectorAll('#scheduleBody tr.schedule-gap').forEach(r => r.remove());
+
+    document.querySelectorAll('#scheduleBody tr[data-teams]').forEach(row => {
+        const teams = (row.dataset.teams || '').split(',');
+        const show = !active || teams.includes(team);
+        row.style.display = show ? '' : 'none';
+        if (isMobile) {
+            const next = row.nextElementSibling;
+            if (next && !next.dataset.teams) next.style.display = show ? '' : 'none';
+        }
+    });
+
+    if (!active) return;
+
+    // Insert gap indicator rows between visible match groups
+    const allMainRows = [...document.querySelectorAll('#scheduleBody tr[data-teams]')];
+    const visibleRows = allMainRows.filter(r => r.style.display !== 'none');
+    const cols = isMobile ? 5 : 8;
+
+    visibleRows.forEach((row, i) => {
+        if (i === 0) return;
+        const prevVisible = visibleRows[i - 1];
+
+        // Walk from after the previous visible match to count hidden matches in between
+        // On mobile each visible match has a trailing blue row, so skip it first
+        let cursor = isMobile
+            ? prevVisible.nextElementSibling?.nextElementSibling
+            : prevVisible.nextElementSibling;
+
+        let hiddenCount = 0;
+        while (cursor && cursor !== row) {
+            if (cursor.dataset.teams) hiddenCount++;
+            cursor = cursor.nextElementSibling;
+        }
+
+        if (hiddenCount > 0) {
+            const gapRow = document.createElement('tr');
+            gapRow.className = 'schedule-gap';
+            gapRow.innerHTML = `<td colspan="${cols}">· · · ${hiddenCount} match${hiddenCount !== 1 ? 'es' : ''} not shown · · ·</td>`;
+            row.parentNode.insertBefore(gapRow, row);
+        }
+    });
+}
+
+window.toggleScheduleFilter = function () {
+    window.scheduleFilterActive = !window.scheduleFilterActive;
+    document.getElementById('scheduleFilterBtn')?.classList.toggle('active', window.scheduleFilterActive);
+    applyScheduleFilter();
+};
+
+// Push a history entry so the native back gesture can dismiss overlays
+function pushNavState(overlay) {
+    history.pushState({ overlay }, '');
+}
+
+// Native back gesture/button: close the topmost visible overlay
+window.addEventListener('popstate', () => {
+    if (document.getElementById('photoLightbox').style.display !== 'none') {
+        window.closeLightbox();
+    } else if (document.getElementById('matchDetailView').style.display !== 'none') {
+        window.closeMatchDetail();
+    } else if (document.getElementById('teamDetailView').style.display !== 'none') {
+        window.goBack();
+    } else if (window.currentView === 'matchPrepView') {
+        window.switchView('scheduleView');
+    }
+});
+
+window.setUIMode = function (mode) {
+    localStorage.setItem('uiMode', mode);
+    document.body.classList.toggle('mobile-ui', mode === 'mobile');
+    document.body.classList.toggle('split-ui', mode === 'split');
+    document.getElementById('desktopModeBtn')?.classList.toggle('active', mode === 'desktop');
+    document.getElementById('mobileModeBtn')?.classList.toggle('active', mode === 'mobile');
+    document.getElementById('splitModeBtn')?.classList.toggle('active', mode === 'split');
+    displaySchedule();
+};
+
+function initUIMode() {
+    const saved = localStorage.getItem('uiMode');
+    const isMobile = /Mobi|Android|iPhone/i.test(navigator.userAgent);
+    const mode = saved || (isMobile ? 'mobile' : 'desktop');
+    window.setUIMode(mode);
+}
 
 window.switchView = function (viewId, btn) {
+    // In split mode, showing the team detail just reveals the right panel —
+    // the left (main) view should stay visible and currentView unchanged.
+    if (document.body.classList.contains('split-ui') && viewId === 'teamDetailView') {
+        document.getElementById('matchDetailView').style.display = 'none';
+        window.previousView = window.currentView;
+        document.getElementById('teamDetailView').style.display = 'block';
+        updateDetailBackButton();
+        return;
+    }
+
     // 1. Hide the current view
     const current = document.getElementById(window.currentView);
     if (current) current.style.display = 'none';
@@ -2158,10 +2298,12 @@ window.switchView = function (viewId, btn) {
         window.currentView = viewId;
     }
 
-    // 4. Update top-nav active state when a nav button triggered the switch
-    if (btn instanceof HTMLElement) {
-        document.querySelectorAll('.top-nav .nav-btn').forEach(b => b.classList.remove('active'));
-        btn.classList.add('active');
+    // 4. Sync all nav items (top-nav and mobile bottom nav) by data-view attribute
+    const MAIN_VIEWS = new Set(['homeView', 'scheduleView', 'analysisView', 'toolsView']);
+    if (MAIN_VIEWS.has(viewId)) {
+        document.querySelectorAll('[data-view]').forEach(b => {
+            b.classList.toggle('active', b.dataset.view === viewId);
+        });
     }
 
     // 5. Lazy-render tools tab when first opened
@@ -2664,14 +2806,12 @@ async function renderDraft() {
             (active ? `outline:1px dashed ${solid};outline-offset:-3px;` : '') + `">${content}</td>`;
 
         const all3 = a.captain && a.pick1 && a.pick2;
-        const total = all3 ? epaOf(a.captain) + epaOf(a.pick1) + epaOf(a.pick2) : null;
-        const pct = total != null && expectedTotal > 0 ? (total - expectedTotal) / expectedTotal : null;
-        const totalColor = pct == null ? '#334155'
-            : pct > 0.12 ? '#4ade80'
-                : pct > 0.04 ? '#a3e635'
-                    : pct > -0.04 ? '#f8fafc'
-                        : pct > -0.12 ? '#fb923c'
-                            : '#ef4444';
+        const presentMembers = [a.captain, a.pick1, a.pick2].filter(Boolean);
+        const total = presentMembers.length > 0 ? presentMembers.reduce((s, tn) => s + epaOf(tn), 0) : null;
+        const pct = all3 && expectedTotal > 0 ? (total - expectedTotal) / expectedTotal : null;
+        const totalColor = pct != null
+            ? (pct > 0.12 ? '#4ade80' : pct > 0.04 ? '#a3e635' : pct > -0.04 ? '#f8fafc' : pct > -0.12 ? '#fb923c' : '#ef4444')
+            : (total != null ? '#94a3b8' : '#334155');
 
         return `<tr style="background:${rowBg};${leftBorder}">
             <td style="padding:11px 8px;border-bottom:1px solid #1e293b;text-align:center;">
@@ -2726,7 +2866,10 @@ window.updateDetailBackButton = function () {
 };
 
 window.goBack = function () {
-    // Navigate to the stored previous view
+    if (document.body.classList.contains('split-ui')) {
+        document.getElementById('teamDetailView').style.display = 'none';
+        return;
+    }
     window.switchView(window.previousView);
 };
 
@@ -3086,12 +3229,14 @@ function renderChart(team) {
     const epaData = playedMatches.map(m => m.epa.post);
     const eventLabels = playedMatches.map(m => m.event);
 
+    const isMobile = document.body.classList.contains('mobile-ui');
     const datasets = [{
         label: 'Match EPA',
         data: epaData,
         showLine: false,
-        pointRadius: 5,
-        pointBackgroundColor: eventLabels.map(ev => getEventColor(ev)), // Your color helper
+        pointRadius: isMobile ? 2.5 : 5,
+        pointHoverRadius: isMobile ? 4 : 7,
+        pointBackgroundColor: eventLabels.map(ev => getEventColor(ev)),
         pointBorderColor: eventLabels.map(ev => getEventColor(ev))
     }];
 
@@ -3128,6 +3273,9 @@ function renderChart(team) {
             datasets: datasets
         },
         options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            layout: { padding: { bottom: 8 } },
             plugins: {
                 legend: {
                     labels: {
@@ -3198,8 +3346,8 @@ const bootApp = async () => {
     }
 
     // 1. Set the initial view (Home)
-    const homeBtn = document.querySelector('.nav-btn');
-    if (homeBtn) window.switchView('homeView', homeBtn);
+    initUIMode();
+    window.switchView('homeView');
 
     // 2. Load the cached data into the tables immediately
     // This ensures that when you click 'Statbotics' or 'Schedule', 

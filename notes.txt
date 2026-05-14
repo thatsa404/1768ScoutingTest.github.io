@@ -1,35 +1,42 @@
 Scouting App To-do
 
-- Pull match data from TBA (& store)
-	- Show match details in detail page
-	- Embed youtube video link
-	- Figure out update rate / cron job
 
-- Pull cOPRs from TBA (& store)
-	- Figure out update rate / cron job
 
-- Find a better statbotics update solution than match history?
 
 - Team detail page
-   - Image incorporation
+   - Image incorporation (Upload to imgur?)
    - Add tabs
 	- 1. Default (radar chart?)
 	- 2. Statbotics history, TBA info, etc. (Something to compare OPR with match scores: real vs. expected with OPR line??)
 	- 3. Scouting data & user notes (Make TBD...)
 	- 4. Pit scouting
 
-- Pick-list tab
-	- Open team detail
 
-- Draft tab - auto fill with rankings based on blue alliance match API
 
-- Standalone app-y thing (manifest json?)
 
 - Password protect?
 
-- wolf image - background
 
+
+
+Quick fixes
+- Show match details in detail page (Right ones?)
 - Add back buttons for mobile
+- wolf image - background
+- Standalone app-y thing (manifest json?)
+- Red/blue Alliance stacking in match details
+- Statbotics EPA graph in team detail too squished. Smaller dots?
+- Team match information in team detail extends beyond frame. Extend all frames right the same amount?
+- Re-do formatting of schedule page. Layer red/blue on top of each other?
+- Add nexus connection/queue times below qual match #
+- Add ability to shrink graph to show highlighted team matches only
+Dots on OPR/EPA graphs (i.e. ceiling) should be smaller
+Running EPA in draft
+Predicted match scores (schedule, make fake time)
+Check full screen formatting for laptop...
+Split-screen view (1 - top level, 2 - Team/Match details. Clicking in pane 1 overrides pane 2)
+Contrast on tabs at the bottom (mobile), "Analysis" --> "Data"
+Dwnld TBA/Stat icons, add to tabs within Data, small wolf head --> Scouting
+Start using real site... doesn't seem to load the same way? Tabs aren't switchable
 
-- event team_matches for statbotics sync during events
 
