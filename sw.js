@@ -1,10 +1,6 @@
-const CACHE = 'scouting-v1';
-const SHELL = ['/', '/index.html', '/main.js', '/manifest.json', '/logo.png'];
+const CACHE = 'scouting-v2';
 
 self.addEventListener('install', event => {
-    event.waitUntil(
-        caches.open(CACHE).then(cache => cache.addAll(SHELL))
-    );
     self.skipWaiting();
 });
 
@@ -18,7 +14,6 @@ self.addEventListener('activate', event => {
 });
 
 // Network-first: always try the network, fall back to cache when offline.
-// Successful responses are cached so they're available next time.
 self.addEventListener('fetch', event => {
     if (event.request.method !== 'GET') return;
 
