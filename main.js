@@ -24,6 +24,26 @@ window.currentFocusedTeam = null;
 // 3. UTILITY FUNCTIONS
 const sleep = (ms) => new Promise(res => setTimeout(res, ms));
 
+const TIER_BG  = { S: '#f59e0b', A: '#4ade80', B: '#a855f7', C: '#64748b' };
+const TIER_STYLE = {
+    S: { color: '#f59e0b', bg: 'rgba(245,158,11,0.08)' },
+    A: { color: '#4ade80', bg: 'rgba(74,222,128,0.07)' },
+    B: { color: '#a855f7', bg: 'rgba(168,85,247,0.06)' },
+    C: { color: '#64748b', bg: 'rgba(100,116,139,0.03)' },
+};
+function tierBadge(tier, extraClass = '', label = '') {
+    const bg = TIER_BG[tier] || TIER_BG.C;
+    const fg = tier === 'C' ? '#f8fafc' : '#0f172a';
+    const text = label ? `${tier} ${label}` : tier;
+    return `<span class="${extraClass}" style="display:inline-block;padding:1px 7px;border-radius:4px;font-size:0.72em;font-weight:800;background:${bg};color:${fg};letter-spacing:0.06em;vertical-align:middle;">${text}</span>`;
+}
+function epaRankTier(allTeams, myVal, fieldFn) {
+    const vals = allTeams.map(fieldFn).filter(v => v != null && !isNaN(v)).sort((a, b) => b - a);
+    const rank = vals.findIndex(v => v <= myVal + 0.001);
+    const r = rank < 0 ? vals.length : rank;
+    return r < 8 ? 'S' : r < 20 ? 'A' : r < 32 ? 'B' : 'C';
+}
+
 async function fetchTBA(endpoint) {
     const response = await fetch(`${TBA_BASE}${endpoint}`, {
         headers: { 'X-TBA-Auth-Key': TBA_KEY }
@@ -104,6 +124,10 @@ window.displaySchedule = async function () {
     matches.forEach(m => {
         const redWon  = m.redScore > -1 && m.redScore > m.blueScore;
         const blueWon = m.redScore > -1 && m.blueScore > m.redScore;
+        const hasVideo = m.videos && m.videos.length > 0;
+        const videoIcon = hasVideo
+            ? `<svg style="width:12px;height:12px;vertical-align:middle;margin-left:4px;color:#f59e0b;flex-shrink:0;" viewBox="0 0 20 20" fill="currentColor"><circle cx="10" cy="10" r="10"/><polygon points="8,6 15,10 8,14" fill="#080d16"/></svg>`
+            : '';
 
         if (isMobile) {
             const redRow  = document.createElement('tr');
@@ -120,6 +144,7 @@ window.displaySchedule = async function () {
                        <div style="color:${redWon  ? '#4ade80' : '#94a3b8'};font-weight:${redWon  ? '800' : 'normal'};">${m.redScore}</div>
                        <div style="color:#334155;font-size:0.65em;line-height:1.4;">—</div>
                        <div style="color:${blueWon ? '#4ade80' : '#94a3b8'};font-weight:${blueWon ? '800' : 'normal'};">${m.blueScore}</div>
+                       ${hasVideo ? `<div style="margin-top:2px;">${videoIcon}</div>` : ''}
                    </td>`
                 : `<td rowspan="2" style="color:#64748b;font-style:italic;border-left:2px solid #334155;vertical-align:middle;text-align:center;">—</td>`;
 
@@ -144,6 +169,7 @@ window.displaySchedule = async function () {
                        <span style="color:${redWon  ? '#4ade80' : '#94a3b8'};font-weight:${redWon  ? 'bold' : 'normal'}">${m.redScore}</span>
                        <span style="color:#475569;"> – </span>
                        <span style="color:${blueWon ? '#4ade80' : '#94a3b8'};font-weight:${blueWon ? 'bold' : 'normal'}">${m.blueScore}</span>
+                       ${videoIcon}
                    </td>`
                 : `<td style="color:#64748b;font-style:italic;border-left:2px solid #334155;">Upcoming</td>`;
             row.innerHTML = `
@@ -162,10 +188,25 @@ window.viewMatchPrep = async function (matchKey) {
     const match = await db.matches.get(matchKey);
     if (!match) return;
 
-    // 1. Update the Header and Switch View
     document.getElementById('prepMatchLabel').innerText = `Match Prep: Qual ${match.matchNumber}`;
-    window.switchView('matchPrepView');
-    pushNavState('matchPrep');
+    const isSplit = document.body.classList.contains('split-ui');
+    if (isSplit) {
+        document.getElementById('matchDetailView').style.display = 'none';
+        document.getElementById('teamDetailView').style.display = 'none';
+        document.getElementById('splitRightPanel').style.display = 'none';
+        document.getElementById('matchPrepView').style.display = 'block';
+    } else {
+        window.switchView('matchPrepView');
+        pushNavState('matchPrep');
+    }
+
+    // Preload all teams to compute overall tiers
+    const allTeamsForTier = await db.teams.toArray();
+    const overallTierOf = (team) => {
+        const myVal = team.analysis?.ceiling != null ? parseFloat(team.analysis.ceiling) : (team.currentEPA || 0);
+        return epaRankTier(allTeamsForTier, myVal,
+            t => t.analysis?.ceiling != null ? parseFloat(t.analysis.ceiling) : (t.currentEPA || 0));
+    };
 
     // Helper to get team data and return a stats object
     const getTeamStats = async (teamNum) => {
@@ -207,15 +248,15 @@ window.viewMatchPrep = async function (matchKey) {
             return `<div class="prep-team-card"><h3>Team ${teamNum}</h3><p>No data. Sync Statbotics.</p></div>`;
         }
 
-        const ceiling = team.analysis?.ceiling || team.currentEPA || 0;
+        const tier = overallTierOf(team);
 
         return `
         <div class="prep-team-card ${focusClass}">
             <div class="prep-card-header">
                 <div class="header-left" onclick="highlightTeam('${teamNum}')" style="cursor:pointer;">
                     <span class="prep-team-number">${teamNum}</span>
-                    <span class="ceiling-label">Ceiling: <strong>${ceiling}</strong></span>
                 </div>
+                ${tierBadge(tier, 'prep-tier-badge', 'Tier')}
                 <button class="profile-link-btn" onclick="viewTeamDetail(${teamNum})">
                     View Profile
                 </button>
@@ -519,8 +560,8 @@ window.refreshPrepHighlight = function () {
 
 
 
-async function getMatchHistory(teamNumber) {
-    const url = `https://api.statbotics.io/v3/team_matches?team=${teamNumber}&year=2026`;
+async function getMatchHistory(teamNumber, year) {
+    const url = `https://api.statbotics.io/v3/team_matches?team=${teamNumber}&year=${year}`;
     const response = await fetch(url);
     const json = await response.json();
     const matchArray = json.data || json.results || json;
@@ -534,6 +575,8 @@ async function getMatchHistory(teamNumber) {
 }
 
 async function processTeamPerformance(teamNumber, eventKey, force = false) {
+    const year = eventKey.slice(0, 4);
+
     // 1. Check local DB
     const cachedTeam = await db.teams.get(teamNumber);
 
@@ -543,7 +586,7 @@ async function processTeamPerformance(teamNumber, eventKey, force = false) {
     const teamName = nameData.name || "Unknown Team";
 
     // 2. Handshake (team_year)
-    const summaryResp = await fetch(`https://api.statbotics.io/v3/team_year/${teamNumber}/2026`);
+    const summaryResp = await fetch(`https://api.statbotics.io/v3/team_year/${teamNumber}/${year}`);
     const summary = await summaryResp.json();
     const apiMatchCount = summary.count || summary.data?.count || 0;
 
@@ -575,7 +618,7 @@ async function processTeamPerformance(teamNumber, eventKey, force = false) {
 
     // 4. THE DEEP DIVE
     console.log(`-> Fetching full matches for ${teamNumber}...`);
-    const fullMatchData = await getMatchHistory(teamNumber);
+    const fullMatchData = await getMatchHistory(teamNumber, year);
 
     if (!fullMatchData || fullMatchData.length === 0) {
         console.warn(`-> No match data found for ${teamNumber}`);
@@ -1226,10 +1269,12 @@ window.displayTeams = async function () {
     }
     table.style.display = 'table';
 
-    // 1. Determine the range using Current EPA (Our constant baseline)
-    const epaValues = allTeams.map(t => t.currentEPA || 0);
-    const minEPA = Math.min(...epaValues);
-    const maxEPA = Math.max(...epaValues);
+    // Compute tier by ceiling EPA rank across all teams
+    const sortedForTier = [...allTeams].sort((a, b) =>
+        (b.analysis?.ceiling || b.currentEPA || 0) - (a.analysis?.ceiling || a.currentEPA || 0));
+    const teamTierMap = new Map(sortedForTier.map((t, i) => [
+        t.teamNumber, i < 8 ? 'S' : i < 20 ? 'A' : i < 32 ? 'B' : 'C'
+    ]));
 
     // 2. Sort logic (Maintains your preferred order)
     allTeams.sort((a, b) => {
@@ -1276,19 +1321,10 @@ window.displayTeams = async function () {
         const analysis = team.analysis || { ceiling: "—", lowerBound: "—", upperBound: "—" };
         const { ceiling, lowerBound, upperBound } = analysis;
 
-        let percent;
-        if (minEPA === maxEPA) {
-            percent = 0.5;
-        } else {
-            percent = (team.currentEPA - minEPA) / (maxEPA - minEPA || 1);
-        }
-
-        const rowColor = getRowColor(percent);
-        const rowBackground = `${rowColor.replace('rgb', 'rgba').replace(')', ', 0.15)')}`;
-
+        const tier = teamTierMap.get(team.teamNumber) || 'C';
         const row = document.createElement('tr');
-        row.style.backgroundColor = rowBackground;
-        row.style.borderLeft = `6px solid ${rowColor}`;
+        row.style.backgroundColor = TIER_STYLE[tier].bg;
+        row.style.borderLeft = `6px solid ${TIER_STYLE[tier].color}`;
 
         // --- THE FIX ---
         // 1. Change the mouse to a pointer so it feels like a button
@@ -1299,10 +1335,10 @@ window.displayTeams = async function () {
 
         // Notice we removed the onclick="" from the <td> string
         row.innerHTML = `
+            <td>${tierBadge(tier)}</td>
             <td><strong>${team.teamNumber}</strong></td>
             <td>${team.currentEPA ? team.currentEPA.toFixed(1) : 'N/A'}</td>
             <td class="ceiling-cell"><strong>${ceiling}</strong></td>
-            <td class="confidence">[${lowerBound} - ${upperBound}]</td>
             <td style="color:#aaa;">${team.autoEPA ? team.autoEPA.toFixed(1) : '-'}</td>
             <td style="color:#aaa;">${team.teleopEPA ? team.teleopEPA.toFixed(1) : '-'}</td>
             <td style="color:#aaa;">${team.endgameEPA ? team.endgameEPA.toFixed(1) : '-'}</td>
@@ -1312,22 +1348,6 @@ window.displayTeams = async function () {
     });
 }
 
-// Helper to calculate hex codes for Red -> Grey -> Green
-function getRowColor(percent) {
-    if (percent > 0.5) {
-        // Grey to Green
-        const p = (percent - 0.5) * 2;
-        const r = Math.floor(128 * (1 - p));
-        const g = Math.floor(128 + (127 * p));
-        return `rgb(${r}, ${g}, ${r})`;
-    } else {
-        // Red to Grey
-        const p = percent * 2;
-        const r = Math.floor(220 * (1 - p) + 128 * p);
-        const g = Math.floor(128 * p);
-        return `rgb(${r}, ${g}, ${g})`;
-    }
-}
 
 // And add this at the very bottom of main.js to load on startup
 displayTeams();
@@ -1676,28 +1696,29 @@ window.displayTBATeams = async function () {
         }
         return (parseFloat(valB) - parseFloat(valA)) * tbaSortOrder;
     });
-    const oprs = allTeams.map(effOPR);
-    const minOPR = Math.min(...oprs), maxOPR = Math.max(...oprs);
+    const tbaForTier = [...allTeams].sort((a, b) => effOPR(b) - effOPR(a));
+    const tbaTierMap = new Map(tbaForTier.map((t, i) => [
+        t.teamNumber, i < 8 ? 'S' : i < 20 ? 'A' : i < 32 ? 'B' : 'C'
+    ]));
     renderTBAChart(allTeams, effOPR);
     table.style.display = 'table';
     tableBody.innerHTML = '';
     const hasComponents = allTeams.some(t => t.autoOPR != null);
     allTeams.forEach(team => {
         const eff = effOPR(team);
-        const pct = maxOPR === minOPR ? 0.5 : (eff - minOPR) / (maxOPR - minOPR);
-        const rowColor = getRowColor(pct);
+        const tier = tbaTierMap.get(team.teamNumber) || 'C';
         const row = document.createElement('tr');
-        row.style.backgroundColor = rowColor.replace('rgb', 'rgba').replace(')', ', 0.15)');
-        row.style.borderLeft = `6px solid ${rowColor}`;
+        row.style.backgroundColor = TIER_STYLE[tier].bg;
+        row.style.borderLeft = `6px solid ${TIER_STYLE[tier].color}`;
         row.style.cursor = 'pointer';
         row.onclick = () => viewTeamDetail(team.teamNumber);
         const oprCell = team.ignoredMatchKey
             ? `${eff.toFixed(1)}&thinsp;<span style="color:#fbbf24; font-size:0.7em; font-weight:600;">LOO</span>`
             : eff.toFixed(1);
         row.innerHTML = `
+            <td>${tierBadge(tier)}</td>
             <td><strong>${team.teamNumber}</strong></td>
             <td>${oprCell}</td>
-            <td>${team.dpr.toFixed(1)}</td>
             <td style="color:${team.ccwm >= 0 ? '#4ade80' : '#f87171'}">${team.ccwm.toFixed(1)}</td>
             <td style="color:#aaa;">${hasComponents && team.autoOPR != null ? team.autoOPR.toFixed(1) : '—'}</td>
             <td style="color:#aaa;">${hasComponents && team.teleopOPR != null ? team.teleopOPR.toFixed(1) : '—'}</td>
@@ -1864,12 +1885,7 @@ async function renderAtAGlance() {
         [...rows].sort((a, b) => b.rp.rp - a.rp.rp || b.epaVal - a.epaVal)
             .map((r, i) => [r.team.teamNumber, i + 1])
     );
-    const TIER = {
-        S: { color: '#f59e0b', bg: 'rgba(245,158,11,0.08)' },
-        A: { color: '#4ade80', bg: 'rgba(74,222,128,0.07)' },
-        B: { color: '#60a5fa', bg: 'rgba(96,165,250,0.06)' },
-        C: { color: '#64748b', bg: 'rgba(100,116,139,0.03)' },
-    };
+    const TIER = TIER_STYLE;
 
     table.style.display = 'table';
     tbody.innerHTML = rows.map(r => {
@@ -2124,9 +2140,6 @@ window.viewTeamDetail = async function (teamNumber) {
     const label = document.getElementById('detailTeamLabel');
     const stats = document.getElementById('detailStats');
 
-    // --- THE FIX: Grab the link element ---
-    const statLink = document.getElementById('statboticsLink');
-
     if (!view || !label || !stats) {
         console.error("Missing Detail View elements in HTML.");
         return;
@@ -2134,14 +2147,6 @@ window.viewTeamDetail = async function (teamNumber) {
 
     view.style.display = 'block';
     label.innerText = `Team ${teamNumber}: ${team.teamName || ''}`;
-
-    if (statLink) {
-        statLink.href = `https://www.statbotics.io/team/${teamNumber}/2026`;
-    }
-    const tbaTeamLink = document.getElementById('tbaTeamLink');
-    if (tbaTeamLink) {
-        tbaTeamLink.href = `https://www.thebluealliance.com/team/${teamNumber}/2026`;
-    }
 
     // --- FIX: The Safe Check ---
     // If analysis is null, provide default "blank" values
@@ -2272,6 +2277,15 @@ function initUIMode() {
 }
 
 window.switchView = function (viewId, btn) {
+    // In split mode, close the prep panel if it was showing in the right panel.
+    if (document.body.classList.contains('split-ui')) {
+        const prep = document.getElementById('matchPrepView');
+        if (prep && prep.style.display === 'block') {
+            prep.style.display = 'none';
+            document.getElementById('splitRightPanel').style.display = 'flex';
+        }
+    }
+
     // In split mode, showing the team detail just reveals the right panel —
     // the left (main) view should stay visible and currentView unchanged.
     if (document.body.classList.contains('split-ui') && viewId === 'teamDetailView') {
@@ -2365,6 +2379,41 @@ function refreshPickPositions() {
 
 window.resetPickList = async function () {
     localStorage.removeItem('pickListOrder');
+    await renderPickList();
+};
+
+window.exportPickList = function () {
+    const order = loadPickOrder();
+    if (!order.length) { alert('No pick list to export.'); return; }
+    const text = order.map(t => t === '---separator---' ? '---' : t).join('\n');
+    navigator.clipboard.writeText(text)
+        .then(() => alert('Pick list copied to clipboard.'))
+        .catch(() => alert('Copy failed — check clipboard permissions.'));
+};
+
+window.showImportPickList = function () {
+    const modal = document.getElementById('pickImportModal');
+    if (!modal) return;
+    document.getElementById('pickImportText').value = '';
+    modal.style.display = 'flex';
+};
+
+window.closeImportPickList = function () {
+    const modal = document.getElementById('pickImportModal');
+    if (modal) modal.style.display = 'none';
+};
+
+window.confirmImportPickList = async function () {
+    const text = document.getElementById('pickImportText').value.trim();
+    if (!text) return;
+    const order = text.split(/\r?\n/)
+        .map(l => l.trim())
+        .filter(l => l)
+        .map(l => l === '---' ? '---separator---' : l);
+    const teams = order.filter(t => t !== '---separator---');
+    if (!teams.length) { alert('No team numbers found.'); return; }
+    localStorage.setItem('pickListOrder', JSON.stringify(order));
+    window.closeImportPickList();
     await renderPickList();
 };
 
@@ -2500,12 +2549,7 @@ async function renderPickList() {
             .forEach(([tn,], i) => { rpRankMap[tn] = i + 1; });
     }
 
-    const TIER = {
-        S: { color: '#f59e0b', bg: 'rgba(245,158,11,0.08)' },
-        A: { color: '#4ade80', bg: 'rgba(74,222,128,0.07)' },
-        B: { color: '#60a5fa', bg: 'rgba(96,165,250,0.06)' },
-        C: { color: '#64748b', bg: 'rgba(100,116,139,0.03)' },
-    };
+    const TIER = TIER_STYLE;
 
     table.style.display = 'table';
     let pickPos = 1;
@@ -2761,7 +2805,7 @@ async function renderDraft() {
     const sortedByEPA = allTeams.slice().sort((a, b) => (b.currentEPA || 0) - (a.currentEPA || 0));
     const epaRankOf = Object.fromEntries(sortedByEPA.map((t, i) => [String(t.teamNumber), i]));
     const quickTier = tn => { const r = epaRankOf[tn] ?? 99; return r < 8 ? 'S' : r < 20 ? 'A' : r < 32 ? 'B' : 'C'; };
-    const TIER_CLR = { S: '#f59e0b', A: '#4ade80', B: '#60a5fa', C: '#64748b' };
+    const TIER_CLR = { S: '#f59e0b', A: '#4ade80', B: '#a855f7', C: '#64748b' };
 
     // Load/init state; auto-fill first captain
     let state = loadDraftState() || freshDraftState();
@@ -2830,9 +2874,11 @@ async function renderDraft() {
     const rawOrder = (() => {
         try { return JSON.parse(localStorage.getItem('pickListOrder')) || []; } catch { return []; }
     })().filter(t => t !== '---separator---');
+    const hasPickList = rawOrder.length > 0;
     const available = rawOrder.filter(tn => !picked.has(tn) && teamInfoMap[tn]);
     const avSet = new Set(available);
     allTeams.forEach(t => { const tn = String(t.teamNumber); if (!picked.has(tn) && !avSet.has(tn)) available.push(tn); });
+    if (!hasPickList) available.sort((a, b) => epaOf(b) - epaOf(a));
 
     pickPanel.innerHTML = available.map((tn, idx) => {
         const t = teamInfoMap[tn];
@@ -2857,7 +2903,7 @@ window.updateDetailBackButton = function () {
 
     // Change the label based on where the user was previously
     if (window.previousView === 'matchPrepView') {
-        btn.innerText = '← Back to Match Prep';
+        btn.innerText = '← Back';
     } else if (window.previousView === 'teamView') {
         btn.innerText = '← Back to Statbotics';
     } else {
@@ -2894,8 +2940,9 @@ async function renderOverview(team, tbaTeam) {
     const lb = analysis.lowerBound, ub = analysis.upperBound;
     const ciStr = (lb != null && lb !== '—' && ub != null && ub !== '—') ? `${lb} – ${ub}` : null;
 
-    const card = (label, value, color = '#f1f5f9', sub = null) => `
-        <div style="background:#1e293b; padding:16px; border-radius:8px; border:1px solid #334155;">
+    const card = (label, value, color = '#f1f5f9', sub = null, tier = null) => `
+        <div style="background:#1e293b; padding:16px; border-radius:8px; border:1px solid #334155; position:relative;">
+            ${tier ? `<span style="position:absolute;top:8px;right:8px;">${tierBadge(tier)}</span>` : ''}
             <div style="color:#64748b; font-size:0.72em; font-weight:600; text-transform:uppercase; letter-spacing:0.05em; margin-bottom:6px;">${label}</div>
             <div style="font-size:1.55em; font-weight:800; color:${color}; line-height:1.1;">${value}</div>
             ${sub ? `<div style="color:#64748b; font-size:0.78em; margin-top:4px;">${sub}</div>` : ''}
@@ -2925,6 +2972,35 @@ async function renderOverview(team, tbaTeam) {
         }
     }
 
+    // Component tiers — rank this team's each EPA against all teams
+    const [allTeamsForOvTier, allTBAForOvTier] = await Promise.all([db.teams.toArray(), db.tbaTeams.toArray()]);
+    const tbaOvMap = Object.fromEntries(allTBAForOvTier.map(t => [t.teamNumber, t]));
+    const ceilOf = t => t.analysis?.ceiling != null ? parseFloat(t.analysis.ceiling) : (t.currentEPA || 0);
+    const tierOverall  = epaRankTier(allTeamsForOvTier, ceilOf(team), ceilOf);
+    const tierAuto     = epaRankTier(allTeamsForOvTier, team.autoEPA    || 0, t => t.autoEPA    || 0);
+    const tierTeleop   = epaRankTier(allTeamsForOvTier, team.teleopEPA  || 0, t => t.teleopEPA  || 0);
+    const tierEndgame  = epaRankTier(allTeamsForOvTier, team.endgameEPA || 0, t => t.endgameEPA || 0);
+    const tierOPR      = effOPRVal != null
+        ? epaRankTier(allTBAForOvTier, effOPRVal, t => tbaOvMap[t.teamNumber]?.opr ?? 0)
+        : null;
+    const tierAutoOPR    = tbaTeam?.autoOPR    != null ? epaRankTier(allTBAForOvTier, tbaTeam.autoOPR,    t => tbaOvMap[t.teamNumber]?.autoOPR    ?? 0) : null;
+    const tierTeleopOPR  = tbaTeam?.teleopOPR  != null ? epaRankTier(allTBAForOvTier, tbaTeam.teleopOPR,  t => tbaOvMap[t.teamNumber]?.teleopOPR  ?? 0) : null;
+    const tierEndgameOPR = tbaTeam?.endgameOPR != null ? epaRankTier(allTBAForOvTier, tbaTeam.endgameOPR, t => tbaOvMap[t.teamNumber]?.endgameOPR ?? 0) : null;
+    const tierCCWM       = tbaTeam?.ccwm       != null ? epaRankTier(allTBAForOvTier, tbaTeam.ccwm,       t => tbaOvMap[t.teamNumber]?.ccwm       ?? 0) : null;
+
+    const tierChip = (label, tier) =>
+        `<span style="display:inline-flex;align-items:center;gap:5px;padding:3px 9px;background:#1e293b;border-radius:6px;border:1px solid #334155;">
+            <span style="color:#64748b;font-size:0.75em;font-weight:600;">${label}</span>${tierBadge(tier)}
+        </span>`;
+
+    const tierRow = `<div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:10px;">
+        ${tierChip('Overall', tierOverall)}
+        ${tierChip('Auto', tierAuto)}
+        ${tierChip('Teleop', tierTeleop)}
+        ${tierChip('Endgame', tierEndgame)}
+        ${tierOPR ? tierChip('OPR', tierOPR) : ''}
+    </div>`;
+
     const photoId = `ov-photo-${team.teamNumber}`;
     const photoHtml = team.photoUrl
         ? `<img id="${photoId}" src="${team.photoUrl}" alt="Team ${team.teamNumber}"
@@ -2951,32 +3027,32 @@ async function renderOverview(team, tbaTeam) {
             <div style="flex:1; min-width:180px;">
                 <div style="font-size:1.8em; font-weight:800; color:#f8fafc; line-height:1.15;">${team.teamName || `Team ${team.teamNumber}`}</div>
                 <div style="color:#64748b; font-size:1.05em; margin-top:4px;">Team #${team.teamNumber}</div>
+                ${tierRow}
                 <div style="display:flex; gap:16px; margin-top:14px; flex-wrap:wrap;">
-                    <a href="https://www.thebluealliance.com/team/${team.teamNumber}/2026" target="_blank"
-                        style="color:#3b82f6; text-decoration:none; font-size:0.9em;">View on TBA ↗</a>
-                    <a href="https://www.statbotics.io/team/${team.teamNumber}/2026" target="_blank"
-                        style="color:#3b82f6; text-decoration:none; font-size:0.9em;">View on Statbotics ↗</a>
+                    <a href="https://www.thebluealliance.com/team/${team.teamNumber}/${team.eventKey?.slice(0,4) || ''}" target="_blank"
+                        style="color:#3b82f6; text-decoration:none; font-size:0.9em; display:inline-flex; align-items:center; gap:4px;"><img src="tba.png" class="source-logo" style="margin:0;">View on TBA ↗</a>
+                    <a href="https://www.statbotics.io/team/${team.teamNumber}/${team.eventKey?.slice(0,4) || ''}" target="_blank"
+                        style="color:#3b82f6; text-decoration:none; font-size:0.9em; display:inline-flex; align-items:center; gap:4px;"><img src="statbotics.ico" class="source-logo" style="margin:0;">View on Statbotics ↗</a>
                 </div>
             </div>
         </div>
 
         ${sectionLabel('Statbotics EPA')}
         <div style="display:grid; grid-template-columns:repeat(auto-fit,minmax(110px,1fr)); gap:12px;">
-            ${card('Total EPA', fmt(team.currentEPA))}
-            ${card('Auto', fmt(team.autoEPA))}
-            ${card('Teleop', fmt(team.teleopEPA))}
-            ${card('Endgame', fmt(team.endgameEPA))}
-            ${card('Ceiling', ceilStr, '#4ade80', ciStr ? `90%: ${ciStr}` : null)}
+            ${card('Total EPA', fmt(team.currentEPA), '#f1f5f9', null, tierOverall)}
+            ${card('Auto', fmt(team.autoEPA), '#f1f5f9', null, tierAuto)}
+            ${card('Teleop', fmt(team.teleopEPA), '#f1f5f9', null, tierTeleop)}
+            ${card('Endgame', fmt(team.endgameEPA), '#f1f5f9', null, tierEndgame)}
+            ${card('Ceiling', ceilStr, '#4ade80', ciStr ? `90%: ${ciStr}` : null, tierOverall)}
         </div>
 
         ${sectionLabel('TBA OPR')}
         <div style="display:grid; grid-template-columns:repeat(auto-fit,minmax(110px,1fr)); gap:12px;">
-            ${card(oprLabel, effOPRVal != null ? fmt(effOPRVal) : '—')}
-            ${card('DPR', hasTBA ? fmt(tbaTeam.dpr) : '—')}
-            ${card('CCWM', hasTBA ? fmt(tbaTeam.ccwm) : '—', ccwmColor)}
-            ${hasCompOPR ? card('Auto OPR', fmt(tbaTeam.autoOPR)) : ''}
-            ${hasCompOPR ? card('Teleop OPR', fmt(tbaTeam.teleopOPR)) : ''}
-            ${hasCompOPR ? card('Endgame OPR', fmt(tbaTeam.endgameOPR)) : ''}
+            ${card(oprLabel, effOPRVal != null ? fmt(effOPRVal) : '—', '#f1f5f9', null, tierOPR)}
+            ${hasCompOPR ? card('Auto OPR', fmt(tbaTeam.autoOPR), '#f1f5f9', null, tierAutoOPR) : ''}
+            ${hasCompOPR ? card('Teleop OPR', fmt(tbaTeam.teleopOPR), '#f1f5f9', null, tierTeleopOPR) : ''}
+            ${hasCompOPR ? card('Endgame OPR', fmt(tbaTeam.endgameOPR), '#f1f5f9', null, tierEndgameOPR) : ''}
+            ${card('CCWM', hasTBA ? fmt(tbaTeam.ccwm) : '—', ccwmColor, null, tierCCWM)}
         </div>
 
         ${sectionLabel('Pit Scouting')}
@@ -2986,12 +3062,12 @@ async function renderOverview(team, tbaTeam) {
         ${placeholder('No match observations recorded yet.')}
     `;
 
-    if (!team.photoUrl) fetchAndCacheTeamPhoto(team.teamNumber, photoId);
+    if (!team.photoUrl) fetchAndCacheTeamPhoto(team.teamNumber, photoId, team.eventKey?.slice(0, 4));
 }
 
-async function fetchAndCacheTeamPhoto(teamNumber, photoElId) {
+async function fetchAndCacheTeamPhoto(teamNumber, photoElId, year) {
     try {
-        const media = await fetchTBA(`/team/frc${teamNumber}/media/2026`);
+        const media = await fetchTBA(`/team/frc${teamNumber}/media/${year}`);
         if (!media || !media.length) return;
         const candidates = media.filter(m => m.direct_url);
         if (!candidates.length) return;
