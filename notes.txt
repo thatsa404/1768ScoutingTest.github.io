@@ -13,30 +13,6 @@ Scouting App To-do
 - Password protect?
 
 Quick fixes
-D - Add back buttons for mobile
-D - Standalone app-y thing (manifest json?)
-D - Red/blue Alliance stacking in match details
-D - Statbotics EPA graph in team detail too squished. Smaller dots?
-D - Team match information in team detail extends beyond frame. Extend all frames right the same amount?
-D - Re-do formatting of schedule page. Layer red/blue on top of each other?
-D - Add ability to shrink graph to show highlighted team matches only
-D - Dots on OPR/EPA graphs (i.e. ceiling) should be smaller
-D - Running EPA in draft
-D - Check full screen formatting for laptop...
-D - Split-screen view (1 - top level, 2 - Team/Match details. Clicking in pane 1 overrides pane 2)
-D - Contrast on tabs at the bottom (mobile), "Analysis" --> "Data"
-D - Start using real site... doesn't seem to load the same way? Tabs aren't switchable
-D - Show match details in detail page (Right ones?)
-D - Dwnld TBA/Stat icons, add to tabs within Data, small wolf head --> Scouting
-D - Back buttons should just be "back?" Just arrow?
-D - Add little icon to show where match videos have been posted
-D - Match prep highlight - should still have white text
-D - Team detail on mobile - Team #/name up top too squished, move name/number from overview up to top level?
-D - Don't need statbotics/tba links on overview as well as EPA/OPR... maybe move up top as well?
-D - Extract year from eventkey, use to load histories/robot images (2025hop example)
-D - Auto/Tele/End being shown in statbotics tab? Same issue as above?
-D - If no pick list - default sort to composite score for draft
-D - Import/export config
 
 IP - Team details page should use similar tiering as the rest of the page - IRON THIS OUT
 

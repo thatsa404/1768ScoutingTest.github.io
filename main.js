@@ -13,6 +13,7 @@ db.version(2).stores({
     matches: 'key, eventKey, matchNumber',
     tbaTeams: 'teamNumber, eventKey'
 });
+window.db = db;
 
 // 2. CONFIG & API KEYS
 const TBA_BASE = 'https://www.thebluealliance.com/api/v3';
@@ -73,6 +74,7 @@ window.fetchSchedule = async function (eventKey) {
             blue: m.alliances.blue.team_keys.map(t => t.replace('frc', '')),
             redScore: m.alliances.red.score,
             blueScore: m.alliances.blue.score,
+            predictedTime: m.predicted_time || null,
             videos: (m.videos || []).filter(v => v.type === 'youtube').map(v => v.key),
         })));
 
@@ -100,7 +102,7 @@ window.displaySchedule = async function () {
         thead.innerHTML = `<tr>
             <th style="text-align:center;">Match</th>
             <th>1</th><th>2</th><th>3</th>
-            <th style="text-align:center;">Score</th>
+            <th style="text-align:center;min-width:3.2rem;">Score</th>
         </tr>`;
     } else {
         thead.innerHTML = `
@@ -140,18 +142,20 @@ window.displaySchedule = async function () {
 
             const scoreCell = m.redScore > -1
                 ? `<td rowspan="2" onclick="viewMatchDetail('${m.key}')"
-                       style="cursor:pointer;border-left:2px solid #334155;vertical-align:middle;text-align:center;white-space:nowrap;padding:4px 8px;">
-                       <div style="color:${redWon  ? '#4ade80' : '#94a3b8'};font-weight:${redWon  ? '800' : 'normal'};">${m.redScore}</div>
-                       <div style="color:#334155;font-size:0.65em;line-height:1.4;">—</div>
-                       <div style="color:${blueWon ? '#4ade80' : '#94a3b8'};font-weight:${blueWon ? '800' : 'normal'};">${m.blueScore}</div>
-                       ${hasVideo ? `<div style="margin-top:2px;">${videoIcon}</div>` : ''}
+                       style="cursor:pointer;border-left:2px solid #334155;vertical-align:middle;text-align:center;white-space:nowrap;padding:4px 8px;min-width:2.8rem;">
+                       <div style="color:${redWon  ? '#4ade80' : '#94a3b8'};font-weight:${redWon  ? '800' : 'normal'};white-space:nowrap;">${m.redScore}</div>
+                       <div style="color:#334155;font-size:0.65em;line-height:1.4;white-space:nowrap;">${hasVideo ? videoIcon : '—'}</div>
+                       <div style="color:${blueWon ? '#4ade80' : '#94a3b8'};font-weight:${blueWon ? '800' : 'normal'};white-space:nowrap;">${m.blueScore}</div>
                    </td>`
-                : `<td rowspan="2" style="color:#64748b;font-style:italic;border-left:2px solid #334155;vertical-align:middle;text-align:center;">—</td>`;
+                : `<td rowspan="2" style="color:#64748b;font-style:italic;border-left:2px solid #334155;vertical-align:middle;text-align:center;white-space:nowrap;min-width:2.8rem;">—</td>`;
 
+            const mobileCountdown = m.redScore <= -1 && m.predictedTime
+                ? `<div data-predicted-time="${m.predictedTime}" style="font-size:0.65em;color:#64748b;margin-top:2px;"></div>`
+                : '';
             redRow.innerHTML = `
                 <td class="match-number" rowspan="2" onclick="viewMatchPrep('${m.key}')"
                     style="cursor:pointer;text-decoration:underline;color:#3b82f6;vertical-align:middle;text-align:center;white-space:nowrap;padding:4px 6px;">
-                    Q${m.matchNumber}
+                    QM ${m.matchNumber}${mobileCountdown}
                 </td>
                 ${redCells}${scoreCell}`;
             blueRow.innerHTML = blueCells;
@@ -172,17 +176,47 @@ window.displaySchedule = async function () {
                        ${videoIcon}
                    </td>`
                 : `<td style="color:#64748b;font-style:italic;border-left:2px solid #334155;">Upcoming</td>`;
+            const desktopCountdown = m.redScore <= -1 && m.predictedTime
+                ? `<div data-predicted-time="${m.predictedTime}" style="font-size:0.65em;color:#64748b;margin-top:2px;"></div>`
+                : '';
             row.innerHTML = `
                 <td class="match-number" onclick="viewMatchPrep('${m.key}')"
-                    style="cursor:pointer;text-decoration:underline;color:#3b82f6;">Qual ${m.matchNumber}</td>
+                    style="cursor:pointer;text-decoration:underline;color:#3b82f6;">QM ${m.matchNumber}${desktopCountdown}</td>
                 ${redCells}${blueCells}${resultCell}`;
             body.appendChild(row);
         }
     });
     applyScheduleFilter();
+    clearInterval(_scheduleCountdownInterval);
+    updateScheduleCountdowns();
+    _scheduleCountdownInterval = setInterval(updateScheduleCountdowns, 1_000);
 };
 
 let prepChartInstance = null; // Global variable to handle chart destruction
+
+const rightPanelHistory = [];
+
+let _scheduleCountdownInterval = null;
+
+function updateScheduleCountdowns() {
+    const now = Math.floor(Date.now() / 1000);
+    document.querySelectorAll('[data-predicted-time]').forEach(el => {
+        const predicted = parseInt(el.dataset.predictedTime, 10);
+        const remaining = predicted - now;
+        if (remaining < 0) {
+            el.textContent = '';
+        } else if (remaining >= 3600) {
+            const t = new Date(predicted * 1000);
+            el.textContent = '~' + t.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+        } else if (remaining >= 300) {
+            el.textContent = `${Math.floor(remaining / 60)}m`;
+        } else {
+            const m = Math.floor(remaining / 60);
+            const s = String(remaining % 60).padStart(2, '0');
+            el.textContent = m > 0 ? `${m}m ${s}s` : `${s}s`;
+        }
+    });
+}
 
 window.viewMatchPrep = async function (matchKey) {
     const match = await db.matches.get(matchKey);
@@ -191,8 +225,7 @@ window.viewMatchPrep = async function (matchKey) {
     document.getElementById('prepMatchLabel').innerText = `Match Prep: Qual ${match.matchNumber}`;
     const isSplit = document.body.classList.contains('split-ui');
     if (isSplit) {
-        document.getElementById('matchDetailView').style.display = 'none';
-        document.getElementById('teamDetailView').style.display = 'none';
+        pushCurrentRightPanel();
         document.getElementById('splitRightPanel').style.display = 'none';
         document.getElementById('matchPrepView').style.display = 'block';
     } else {
@@ -447,7 +480,7 @@ window.viewMatchDetail = async function (matchKey) {
     }
 
     if (document.body.classList.contains('split-ui')) {
-        document.getElementById('teamDetailView').style.display = 'none';
+        pushCurrentRightPanel();
     }
     document.getElementById('matchDetailView').style.display = 'flex';
     pushNavState('matchDetail');
@@ -468,6 +501,9 @@ window.closeLightbox = function () {
 window.closeMatchDetail = function () {
     document.getElementById('matchDetailView').style.display = 'none';
     document.getElementById('matchVideoSection').innerHTML = '';
+    if (document.body.classList.contains('split-ui') && !popRightPanel()) {
+        document.getElementById('splitRightPanel').style.display = 'flex';
+    }
 };
 
 window.loadYTEmbed = function (key, thumbId) {
@@ -806,6 +842,7 @@ window.syncSchedule = async function () {
             blue: m.alliances.blue.team_keys.map(t => t.replace('frc', '')),
             redScore: m.alliances.red.score,
             blueScore: m.alliances.blue.score,
+            predictedTime: m.predicted_time || null,
             videos: (m.videos || []).filter(v => v.type === 'youtube').map(v => v.key),
         })));
 
@@ -1567,6 +1604,7 @@ window.syncTBAMatches = async function () {
             blueScore: m.alliances?.blue?.score ?? -1,
             redBreakdown: m.score_breakdown?.red || null,
             blueBreakdown: m.score_breakdown?.blue || null,
+            predictedTime: m.predicted_time || null,
             videos: (m.videos || []).filter(v => v.type === 'youtube').map(v => v.key),
         }));
         await db.matches.bulkPut(records);
@@ -1814,13 +1852,13 @@ async function renderAtAGlance() {
         if (m.redBreakdown != null) hasBreakdown = true;
 
         for (const team of (m.red || [])) {
-            if (!rpMap[team]) rpMap[team] = { rp: 0, played: 0, wins: 0, ties: 0, losses: 0 };
-            rpMap[team].rp += redRP; rpMap[team].played++;
+            if (!rpMap[team]) rpMap[team] = { rp: 0, played: 0, wins: 0, ties: 0, losses: 0, totalScore: 0 };
+            rpMap[team].rp += redRP; rpMap[team].played++; rpMap[team].totalScore += m.redScore;
             if (redWon) rpMap[team].wins++; else if (tie) rpMap[team].ties++; else rpMap[team].losses++;
         }
         for (const team of (m.blue || [])) {
-            if (!rpMap[team]) rpMap[team] = { rp: 0, played: 0, wins: 0, ties: 0, losses: 0 };
-            rpMap[team].rp += blueRP; rpMap[team].played++;
+            if (!rpMap[team]) rpMap[team] = { rp: 0, played: 0, wins: 0, ties: 0, losses: 0, totalScore: 0 };
+            rpMap[team].rp += blueRP; rpMap[team].played++; rpMap[team].totalScore += m.blueScore;
             if (blueWon) rpMap[team].wins++; else if (tie) rpMap[team].ties++; else rpMap[team].losses++;
         }
     }
@@ -1868,6 +1906,8 @@ async function renderAtAGlance() {
         rows.forEach(r => { r.tier = tierMap.get(r.team.teamNumber); });
     }
 
+    const avgScore = rp => rp.played ? rp.totalScore / rp.played : 0;
+
     // Sort — default rp desc
     rows.sort((a, b) => {
         let va, vb;
@@ -1877,12 +1917,12 @@ async function renderAtAGlance() {
             case 'composite': va = -a.composite; vb = -b.composite; break;
             default: va = a.rp.rp; vb = b.rp.rp; break;
         }
-        return (vb - va) * glanceSortOrder || (b.epaVal - a.epaVal);
+        return (vb - va) * glanceSortOrder || avgScore(b.rp) - avgScore(a.rp) || (b.epaVal - a.epaVal);
     });
 
     // Compute RP-based rank separately so it stays stable regardless of current sort
     const rpRank = Object.fromEntries(
-        [...rows].sort((a, b) => b.rp.rp - a.rp.rp || b.epaVal - a.epaVal)
+        [...rows].sort((a, b) => b.rp.rp - a.rp.rp || avgScore(b.rp) - avgScore(a.rp) || b.epaVal - a.epaVal)
             .map((r, i) => [r.team.teamNumber, i + 1])
     );
     const TIER = TIER_STYLE;
@@ -1891,7 +1931,7 @@ async function renderAtAGlance() {
     tbody.innerHTML = rows.map(r => {
         const { team, rp, opr, epaVal, hasCeil, hasLOO, hasAdj, composite } = r;
         const rank = hasRP ? rpRank[team.teamNumber] : '—';
-        const record = hasRP ? `${rp.wins}–${rp.ties}–${rp.losses}` : null;
+        const record = hasRP ? `${rp.wins}–${rp.losses}${rp.ties ? `–${rp.ties}` : ''}` : null;
         const rpStr = hasRP ? rp.rp : '—';
         const compStr = composite != null ? ((1 - composite) * 100).toFixed(1) : '—';
         const epaStr = epaVal.toFixed(1);
@@ -1915,19 +1955,20 @@ async function renderAtAGlance() {
             </div>
         </td>`;
 
-        const teamCell = `<td style="padding:13px 10px; border-bottom:1px solid #1e293b;">
+        const teamCell = `<td style="padding:13px 10px; border-bottom:1px solid #1e293b; white-space:nowrap;">
             <strong style="color:#f8fafc;">${team.teamNumber}</strong>
-            <span style="color:#94a3b8; font-size:0.9em; font-weight:600; margin-left:6px;">${team.teamName || ''}</span>
-            ${record ? `<div style="color:#94a3b8; font-size:0.85em; font-weight:600; margin-top:3px;">${record}</div>` : ''}
+        </td>
+        <td style="padding:13px 10px; border-bottom:1px solid #1e293b;">
+            <span style="color:#94a3b8; font-size:0.85em; font-weight:600;">${team.teamName || ''}</span>
         </td>`;
 
         return `<tr style="cursor:pointer; background:${ts.bg};" onclick="viewTeamDetail(${team.teamNumber})">
             ${rankCell}
             ${teamCell}
-            ${td(`<strong style="color:${ts.color};">${compStr}</strong>`)}
-            ${td(`<strong style="color:#f8fafc;">${rpStr}</strong>`)}
-            ${td(`<strong>${epaStr}</strong>${ceilBadge}`)}
-            ${td(hasOPR ? `<strong>${oprStr}</strong>${oprBadge}` : '—')}
+            ${td(`<span style="color:${ts.color};">${compStr}</span>`)}
+            ${td(`${rpStr}${record ? `<div style="color:#94a3b8;font-size:0.75em;font-weight:600;margin-top:2px;white-space:nowrap;">${record}</div>` : ''}`)}
+            ${td(`${epaStr}${ceilBadge}`)}
+            ${td(hasOPR ? `${oprStr}${oprBadge}` : '—')}
         </tr>`;
     }).join('');
 
@@ -2241,6 +2282,26 @@ window.toggleScheduleFilter = function () {
     applyScheduleFilter();
 };
 
+function pushCurrentRightPanel() {
+    if (!document.body.classList.contains('split-ui')) return;
+    for (const id of ['teamDetailView', 'matchDetailView', 'matchPrepView']) {
+        const el = document.getElementById(id);
+        const d = el?.style.display;
+        if (d && d !== 'none') {
+            rightPanelHistory.push({ id, display: d });
+            el.style.display = 'none';
+            return;
+        }
+    }
+}
+
+function popRightPanel() {
+    if (rightPanelHistory.length === 0) return false;
+    const { id, display } = rightPanelHistory.pop();
+    document.getElementById(id).style.display = display;
+    return true;
+}
+
 // Push a history entry so the native back gesture can dismiss overlays
 function pushNavState(overlay) {
     history.pushState({ overlay }, '');
@@ -2282,14 +2343,16 @@ window.switchView = function (viewId, btn) {
         const prep = document.getElementById('matchPrepView');
         if (prep && prep.style.display === 'block') {
             prep.style.display = 'none';
-            document.getElementById('splitRightPanel').style.display = 'flex';
+            if (!popRightPanel()) {
+                document.getElementById('splitRightPanel').style.display = 'flex';
+            }
         }
     }
 
     // In split mode, showing the team detail just reveals the right panel —
     // the left (main) view should stay visible and currentView unchanged.
     if (document.body.classList.contains('split-ui') && viewId === 'teamDetailView') {
-        document.getElementById('matchDetailView').style.display = 'none';
+        pushCurrentRightPanel();
         window.previousView = window.currentView;
         document.getElementById('teamDetailView').style.display = 'block';
         updateDetailBackButton();
@@ -2556,7 +2619,7 @@ async function renderPickList() {
     tbody.innerHTML = rows.map(r => {
         if (r.separator) {
             return `<tr data-separator="true" style="user-select:none;">
-                <td colspan="7" class="drag-handle"
+                <td colspan="8" class="drag-handle"
                     style="padding:9px 20px;border-top:2px dashed #334155;border-bottom:2px dashed #334155;background:#080d16;text-align:center;cursor:grab;touch-action:none;color:#475569;font-size:0.8rem;font-weight:700;letter-spacing:0.06em;">
                     ⠿ &nbsp; drag to reposition &nbsp;·&nbsp; unranked below &nbsp; ⠿
                 </td>
@@ -2565,7 +2628,7 @@ async function renderPickList() {
         const rowPos = pickPos++;
         const { team, rp, opr, epaVal, hasCeil, hasLOO, hasAdj } = r;
         const ts = TIER[r.tier];
-        const record = hasRP ? `${rp.wins}–${rp.ties}–${rp.losses}` : null;
+        const record = hasRP ? `${rp.wins}–${rp.losses}${rp.ties ? `–${rp.ties}` : ''}` : null;
         const compStr = ((1 - r.composite) * 100).toFixed(1);
         const ceilBadge = hasCeil ? `<span style="color:#4ade80;font-size:0.65em;font-weight:600;margin-left:3px;">CEIL</span>` : '';
         const oprBadge = hasLOO
@@ -2582,20 +2645,21 @@ async function renderPickList() {
                     <span style="color:#475569;font-size:1.2em;line-height:1;">⠿</span>
                 </div>
             </td>
-            <td style="padding:13px 10px;border-bottom:1px solid #1e293b;cursor:pointer;" onclick="viewTeamDetail(${team.teamNumber})">
+            <td style="padding:13px 10px;border-bottom:1px solid #1e293b;cursor:pointer;white-space:nowrap;" onclick="viewTeamDetail(${team.teamNumber})">
                 <strong style="color:#f8fafc;">${team.teamNumber}</strong>
-                <span style="color:#94a3b8;font-size:0.9em;font-weight:600;margin-left:6px;">${team.teamName || ''}</span>
-                ${record ? `<div style="color:#94a3b8;font-size:0.85em;font-weight:600;margin-top:3px;">${record}</div>` : ''}
             </td>
-            ${td(`<strong style="color:${ts.color};">${compStr}</strong>`)}
+            <td style="padding:13px 10px;border-bottom:1px solid #1e293b;cursor:pointer;" onclick="viewTeamDetail(${team.teamNumber})">
+                <span style="color:#94a3b8;font-size:0.85em;font-weight:600;">${team.teamName || ''}</span>
+            </td>
+            ${td(`<span style="color:${ts.color};">${compStr}</span>`)}
             ${(() => {
                 const rpRank = rpRankMap[String(team.teamNumber)];
                 const rankBadge = rpRank != null && rpRank <= 10
                     ? `<div style="color:#94a3b8;font-size:0.72em;font-weight:700;margin-top:2px;">#${rpRank} RP</div>` : '';
-                return td(`<strong>${hasRP ? rp.rp : '—'}</strong>${rankBadge}`);
+                return td(`${hasRP ? rp.rp : '—'}${rankBadge}`);
             })()}
-            ${td(`<strong>${epaVal.toFixed(1)}</strong>${ceilBadge}`)}
-            ${td(hasOPR ? `<strong>${opr != null ? opr.toFixed(1) : '—'}</strong>${oprBadge}` : '—')}
+            ${td(`${epaVal.toFixed(1)}${ceilBadge}`)}
+            ${td(hasOPR ? `${opr != null ? opr.toFixed(1) : '—'}${oprBadge}` : '—')}
             <td style="padding:13px 10px;border-bottom:1px solid #1e293b;text-align:center;">
                 <button onclick="dnpTeam('${team.teamNumber}')"
                     style="background:#1e293b;color:#ef4444;border:1px solid #ef4444;border-radius:6px;padding:5px 10px;font-size:0.8rem;font-weight:700;cursor:pointer;white-space:nowrap;">
@@ -2914,6 +2978,9 @@ window.updateDetailBackButton = function () {
 window.goBack = function () {
     if (document.body.classList.contains('split-ui')) {
         document.getElementById('teamDetailView').style.display = 'none';
+        if (!popRightPanel()) {
+            document.getElementById('splitRightPanel').style.display = 'flex';
+        }
         return;
     }
     window.switchView(window.previousView);
